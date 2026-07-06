@@ -1,4 +1,7 @@
 .venv/
 html/
 __pycache__/
+parser/__pycache__/
 traces/
+outputs/*
+!outputs/.gitkeep
