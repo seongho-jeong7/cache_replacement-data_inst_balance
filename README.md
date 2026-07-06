@@ -2,7 +2,20 @@
 
 ## Current Status
 - `ChampSim/`: [ChampSim](https://github.com/ChampSim/ChampSim) 저장소를 git submodule로 연결
-- `trace_for_champsim`: 로컬 트레이스 디렉터리(`/home/inwook/CHAMPSIM/trace_for_champsim`)로의 심볼릭 링크
+- `daily/`: 일별 연구 노트 작성 공간
+- `docs/`: 연구 관련 문서 작성 공간
+- `traces/`: DPC4 traces 다운로드 필요
+
+## Docs
+
+Sphinx 기반 문서 환경을 사용합니다.
+
+```bash
+make setup
+make html
+```
+
+빌드 결과는 `html/` 폴더에 생성됩니다.
 
 ## Ref
 - ChampSim: https://github.com/ChampSim/ChampSim
