@@ -1,4 +1,4 @@
-.PHONY: html clean
+.PHONY: html setup clean
 
 SPHINXBUILD ?= $(shell if [ -x .venv/bin/sphinx-build ]; then echo .venv/bin/sphinx-build; else echo sphinx-build; fi)
 SOURCEDIR = .
@@ -9,7 +9,7 @@ html:
 
 setup:
 	python3 -m venv .venv
-	.venv/bin/pip install -r requirements.txt
+	.venv/bin/pip install -r setup/sphinx_requierment.txt
 
 clean:
 	rm -rf "$(BUILDDIR)"
