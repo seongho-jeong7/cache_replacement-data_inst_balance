@@ -1,3 +1,16 @@
 [submodule "ChampSim"]
 	path = ChampSim
 	url = https://github.com/ChampSim/ChampSim.git
+[submodule "ChampSim_DPC4"]
+	path = ChampSim_DPC4
+	url = https://github.com/CMU-SAFARI/ChampSim.git
+[submodule "ChampSim_FDIP_ideal"]
+	path = ChampSim_FDIP_ideal
+	url = https://github.com/inwookan/FDIP_for_experiment.git
+[submodule "ChampSim_FDIP_dirty"]
+	path = ChampSim_FDIP_dirty
+	url = https://github.com/inwookan/FDIP_260204.git
+[submodule "ChampSim_FDIP"]
+	path = ChampSim_FDIP
+	url = https://github.com/seongho-jeong7/ChampSim_FDIP.git
+	branch = master

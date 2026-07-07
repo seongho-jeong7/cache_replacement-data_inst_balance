@@ -1,0 +1,3427 @@
+diff --git a/champsim_config.json b/champsim_config.json
+index d8a33e1..b48ffc5 100644
+--- a/champsim_config.json
++++ b/champsim_config.json
+@@ -4,41 +4,39 @@
+   "page_size": 4096,
+   "heartbeat_frequency": 10000000,
+   "num_cores": 1,
+-
+   "ooo_cpu": [
+     {
+       "frequency": 4000,
+       "ifetch_buffer_size": 64,
+-      "decode_buffer_size": 32,
++      "_note_ifetch": "inwook_ch_Original value was 64",
++      "decode_buffer_size": 192,
+       "dispatch_buffer_size": 32,
+-      "register_file_size": 128,
++      "register_file_size": 280,
+       "rob_size": 352,
+       "lq_size": 128,
+       "sq_size": 72,
+-      "fetch_width": 6,
+-      "decode_width": 6,
+-      "dispatch_width": 6,
+-      "execute_width": 4,
++      "fetch_width": 8,
++      "decode_width": 4,
++      "dispatch_width": 5,
++      "execute_width": 10,
+       "lq_width": 2,
+       "sq_width": 2,
+       "retire_width": 5,
+       "mispredict_penalty": 1,
+-      "scheduler_size": 128,
++      "scheduler_size": 160,
+       "decode_latency": 1,
+       "dispatch_latency": 1,
+       "schedule_latency": 0,
+-      "execute_latency": 0,
++      "execute_latency": 1,
+       "branch_predictor": "bimodal",
+       "btb": "basic_btb"
+     }
+   ],
+-
+   "DIB": {
+     "window_size": 16,
+     "sets": 32,
+     "ways": 8
+   },
+-
+   "L1I": {
+     "sets": 64,
+     "ways": 8,
+@@ -54,7 +52,6 @@
+     "prefetch_activate": "LOAD,PREFETCH",
+     "prefetcher": "no"
+   },
+-
+   "L1D": {
+     "sets": 64,
+     "ways": 12,
+@@ -68,9 +65,8 @@
+     "prefetch_as_load": false,
+     "virtual_prefetch": false,
+     "prefetch_activate": "LOAD,PREFETCH",
+-    "prefetcher": "no"
++    "prefetcher": "ip_stride"
+   },
+-
+   "L2C": {
+     "sets": 1024,
+     "ways": 8,
+@@ -78,15 +74,15 @@
+     "wq_size": 32,
+     "pq_size": 16,
+     "mshr_size": 32,
+-    "latency": 10,
++    "hit_latency": 9,
++    "fill_latency": 1,
+     "max_tag_check": 1,
+     "max_fill": 1,
+     "prefetch_as_load": false,
+     "virtual_prefetch": false,
+     "prefetch_activate": "LOAD,PREFETCH",
+-    "prefetcher": "no"
++    "prefetcher": "ip_stride"
+   },
+-
+   "ITLB": {
+     "sets": 16,
+     "ways": 4,
+@@ -99,7 +95,6 @@
+     "max_fill": 2,
+     "prefetch_as_load": false
+   },
+-
+   "DTLB": {
+     "sets": 16,
+     "ways": 4,
+@@ -112,7 +107,6 @@
+     "max_fill": 2,
+     "prefetch_as_load": false
+   },
+-
+   "STLB": {
+     "sets": 128,
+     "ways": 12,
+@@ -125,7 +119,6 @@
+     "max_fill": 1,
+     "prefetch_as_load": false
+   },
+-
+   "PTW": {
+     "pscl5_set": 1,
+     "pscl5_way": 2,
+@@ -140,7 +133,6 @@
+     "max_read": 2,
+     "max_write": 2
+   },
+-
+   "LLC": {
+     "frequency": 4000,
+     "sets": 2048,
+@@ -149,7 +141,8 @@
+     "wq_size": 32,
+     "pq_size": 32,
+     "mshr_size": 64,
+-    "latency": 20,
++    "hit_latency": 29,
++    "fill_latency": 1,
+     "max_tag_check": 1,
+     "max_fill": 1,
+     "prefetch_as_load": false,
+@@ -158,7 +151,6 @@
+     "prefetcher": "no",
+     "replacement": "lru"
+   },
+-
+   "physical_memory": {
+     "data_rate": 3200,
+     "channels": 1,
+@@ -170,18 +162,17 @@
+     "channel_width": 8,
+     "wq_size": 64,
+     "rq_size": 64,
+-    "tCAS": 24,
+-    "tRCD": 24,
+-    "tRP": 24,
+-    "tRAS": 52,
++    "tCAS": 12.5,
++    "tRCD": 12.5,
++    "tRP": 12.5,
++    "tRAS": 25,
+     "refresh_period": 32,
+     "refreshes_per_period": 8192
+   },
+-
+   "virtual_memory": {
+     "pte_page_size": 4096,
+     "num_levels": 5,
+     "minor_fault_penalty": 200,
+     "randomization": 1
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/config/generate_compile_commands.py b/config/generate_compile_commands.py
+new file mode 100755
+index 0000000..c009e87
+--- /dev/null
++++ b/config/generate_compile_commands.py
+@@ -0,0 +1,29 @@
++#!/usr/bin/env python3
++import json
++import subprocess
++import sys
++
++# Get compiler flags
++try:
++    with open('global.options', 'r') as f:
++        global_flags = f.read().strip().split()
++except:
++    global_flags = ['-std=c++17', '-O3']
++
++# Find all source files
++result = subprocess.run(['find', 'src', '-name', '*.cc'], capture_output=True, text=True)
++source_files = result.stdout.strip().split('\n')
++
++commands = []
++for src in source_files:
++    if not src:
++        continue
++    obj = src.replace('src/', '.csconfig/').replace('.cc', '.o')
++    cmd = {
++        "directory": subprocess.run(['pwd'], capture_output=True, text=True).stdout.strip(),
++        "command": f"g++ {' '.join(global_flags)} -I. -Iinc -Ivcpkg_installed/x64-linux/include -c {src} -o {obj}",
++        "file": src
++    }
++    commands.append(cmd)
++
++print(json.dumps(commands, indent=2))
+diff --git a/inc/block.h b/inc/block.h
+index ad40f36..9ca81db 100644
+--- a/inc/block.h
++++ b/inc/block.h
+@@ -31,6 +31,10 @@ struct cache_block {
+   champsim::address data{};
+ 
+   uint32_t pf_metadata = 0;
++
++  //@Minchan
++  uint64_t access_bit_mask;
++  //
+ };
+ } // namespace champsim
+ 
+diff --git a/inc/cache.h b/inc/cache.h
+index d5eed21..de5ab4d 100644
+--- a/inc/cache.h
++++ b/inc/cache.h
+@@ -67,7 +67,12 @@ class CACHE : public champsim::operable
+     uint32_t pf_metadata;
+     uint32_t cpu;
+ 
++    // @Minchan
++    ooo_model_instr* instr = nullptr;
++    uint8_t access_offset = 0;
++    //
+     access_type type;
++
+     bool prefetch_from_this;
+     bool skip_fill;
+     bool is_translated;
+@@ -133,6 +138,9 @@ private:
+   [[nodiscard]] std::pair<set_type::const_iterator, set_type::const_iterator> get_set_span(champsim::address address) const;
+   [[nodiscard]] long get_set_index(champsim::address address) const;
+ 
++  // HJ
++  bool probe_tag_hit_only(champsim::address addr) const;
++  // HJ
+   template <typename T>
+   bool should_activate_prefetcher(const T& pkt) const;
+ 
+@@ -149,6 +157,14 @@ private:
+   std::deque<tag_lookup_type> inflight_tag_check{};
+   std::deque<tag_lookup_type> translation_stash{};
+ 
++  // Prefetch Utility Tracking
++  uint64_t pf_interval_useful = 0;
++  uint64_t pf_interval_issued = 0;
++  // Prefetch Timeliness Tracking (ATR)
++  uint64_t pf_interval_timely = 0;
++  void track_prefetch_issuance();
++  void track_utility_and_timeliness(bool is_useful, bool is_timely);
++
+ public:
+   std::vector<channel_type*> upper_levels;
+   channel_type* lower_level;
+@@ -194,6 +210,13 @@ public:
+   [[nodiscard]] std::size_t get_mshr_size() const;
+   [[nodiscard]] double get_mshr_occupancy_ratio() const;
+ 
++  // Prefetch Stats Versioning
++  uint64_t pf_stats_version = 0;
++  [[nodiscard]] uint64_t get_prefetch_stats_version() const { return pf_stats_version; }
++
++  // inwook: Changed to get_and_reset for explicit CPU control
++  [[nodiscard]] std::pair<double, double> get_and_reset_prefetch_stats();
++  // inwook
+   [[nodiscard]] std::vector<std::size_t> get_rq_occupancy() const;
+   [[nodiscard]] std::vector<std::size_t> get_rq_size() const;
+   [[nodiscard]] std::vector<double> get_rq_occupancy_ratio() const;
+diff --git a/inc/cache_stats.h b/inc/cache_stats.h
+index 6505202..3f0c18d 100644
+--- a/inc/cache_stats.h
++++ b/inc/cache_stats.h
+@@ -18,6 +18,147 @@ struct cache_stats {
+   uint64_t pf_useless = 0;
+   uint64_t pf_fill = 0;
+ 
++  // HJ
++  //  ===== Cross translation/cache hit counters (50 total) =====
++  //  Context:
++  //    These counters attribute where address translation eventually hits
++  //    (L1D/L2C/LLC/MEM) and where the final cache tag check hits
++  //    (L1I/L1D/L2C/LLC/MEM), conditioned on DTLB/ITLB miss and STLB hit/miss.
++  //
++  //  Naming convention:
++  //    <{d|i}tlb_miss>_stlb_{hit|miss}
++  //      [ _<L1D|L2C|LLC|MEM>_hit ]   // only for the stlb_miss case: where translation hit
++  //      _<L1I|L1D|L2C|LLC|MEM>_hit   // final cache tag hit level
++  //
++  //  A) DTLB hit  → final cache tag hit level (5)
++  uint64_t dtlb_hit_L1I_hit = 0;
++  uint64_t dtlb_hit_L1D_hit = 0;
++  uint64_t dtlb_hit_L2C_hit = 0;
++  uint64_t dtlb_hit_LLC_hit = 0;
++  uint64_t dtlb_hit_MEM_hit = 0;
++
++  // B) ITLB hit  → final cache tag hit level (5)
++  uint64_t itlb_hit_L1I_hit = 0;
++  uint64_t itlb_hit_L1D_hit = 0;
++  uint64_t itlb_hit_L2C_hit = 0;
++  uint64_t itlb_hit_LLC_hit = 0;
++  uint64_t itlb_hit_MEM_hit = 0;
++
++  // C) DTLB miss + STLB hit  → final cache tag hit level (5)
++  uint64_t dtlb_miss_stlb_hit_L1I_hit = 0;
++  uint64_t dtlb_miss_stlb_hit_L1D_hit = 0;
++  uint64_t dtlb_miss_stlb_hit_L2C_hit = 0;
++  uint64_t dtlb_miss_stlb_hit_LLC_hit = 0;
++  uint64_t dtlb_miss_stlb_hit_MEM_hit = 0;
++
++  // D) ITLB miss + STLB hit  → final cache tag hit level (5)
++  uint64_t itlb_miss_stlb_hit_L1I_hit = 0;
++  uint64_t itlb_miss_stlb_hit_L1D_hit = 0;
++  uint64_t itlb_miss_stlb_hit_L2C_hit = 0;
++  uint64_t itlb_miss_stlb_hit_LLC_hit = 0;
++  uint64_t itlb_miss_stlb_hit_MEM_hit = 0;
++
++  // E) DTLB miss + STLB miss + (translation hit level) × (final cache tag hit level) (20)
++  //    stlb_miss_L1D_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t dtlb_miss_stlb_miss_L1D_hit_L1I_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L1D_hit_L1D_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L1D_hit_L2C_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L1D_hit_LLC_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L1D_hit_MEM_hit = 0;
++  //    stlb_miss_L2C_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t dtlb_miss_stlb_miss_L2C_hit_L1I_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L2C_hit_L1D_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L2C_hit_L2C_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L2C_hit_LLC_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_L2C_hit_MEM_hit = 0;
++  //    stlb_miss_LLC_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t dtlb_miss_stlb_miss_LLC_hit_L1I_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_LLC_hit_L1D_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_LLC_hit_L2C_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_LLC_hit_LLC_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_LLC_hit_MEM_hit = 0;
++  //    stlb_miss_MEM_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t dtlb_miss_stlb_miss_MEM_hit_L1I_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_MEM_hit_L1D_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_MEM_hit_L2C_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_MEM_hit_LLC_hit = 0;
++  uint64_t dtlb_miss_stlb_miss_MEM_hit_MEM_hit = 0;
++
++  // F) ITLB miss + STLB miss + (translation hit level) × (final cache tag hit level) (20)
++  //    stlb_miss_L1D_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t itlb_miss_stlb_miss_L1D_hit_L1I_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L1D_hit_L1D_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L1D_hit_L2C_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L1D_hit_LLC_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L1D_hit_MEM_hit = 0;
++  //    stlb_miss_L2C_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t itlb_miss_stlb_miss_L2C_hit_L1I_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L2C_hit_L1D_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L2C_hit_L2C_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L2C_hit_LLC_hit = 0;
++  uint64_t itlb_miss_stlb_miss_L2C_hit_MEM_hit = 0;
++  //    stlb_miss_LLC_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t itlb_miss_stlb_miss_LLC_hit_L1I_hit = 0;
++  uint64_t itlb_miss_stlb_miss_LLC_hit_L1D_hit = 0;
++  uint64_t itlb_miss_stlb_miss_LLC_hit_L2C_hit = 0;
++  uint64_t itlb_miss_stlb_miss_LLC_hit_LLC_hit = 0;
++  uint64_t itlb_miss_stlb_miss_LLC_hit_MEM_hit = 0;
++  //    stlb_miss_MEM_hit × {L1I,L1D,L2C,LLC,MEM}
++  uint64_t itlb_miss_stlb_miss_MEM_hit_L1I_hit = 0;
++  uint64_t itlb_miss_stlb_miss_MEM_hit_L1D_hit = 0;
++  uint64_t itlb_miss_stlb_miss_MEM_hit_L2C_hit = 0;
++  uint64_t itlb_miss_stlb_miss_MEM_hit_LLC_hit = 0;
++  uint64_t itlb_miss_stlb_miss_MEM_hit_MEM_hit = 0;
++  // L1I Demand Access Breakdown
++  uint64_t fdip_l1i_hit = 0;               // 1. Demand hit on prefetched line
++  uint64_t fdip_l1i_hit_non_pf = 0;        // 1-b. Demand hit on non-prefetched line
++  uint64_t fdip_l1i_mshr_merge = 0;        // 2. Demand merge into prefetch MSHR
++  uint64_t fdip_l1i_mshr_merge_non_pf = 0; // 2-b. Demand merge into non-prefetch MSHR
++  uint64_t fdip_l1i_miss = 0;              // 3. Demand miss (no MSHR or non-prefetch MSHR)
++  uint64_t fdip_l1i_total_access = 0;      // Total Demand Accesses to L1I (Check Sum)
++  // ===== end of custom counters =====
++  // HJ
++
++  //@Minchan
++  // TLB hit + bit_mask 상태별 final level hit 통계
++  // ITLB hit + bit_mask=0 (first access) -> final level
++  uint64_t itlb_hit_bit0_L1I_hit = 0;
++  uint64_t itlb_hit_bit0_L1D_hit = 0;
++  uint64_t itlb_hit_bit0_L2C_hit = 0;
++  uint64_t itlb_hit_bit0_LLC_hit = 0;
++  uint64_t itlb_hit_bit0_MEM_hit = 0;
++  // ITLB hit + bit_mask=1 (repeated access) -> final level
++  uint64_t itlb_hit_bit1_L1I_hit = 0;
++  uint64_t itlb_hit_bit1_L1D_hit = 0;
++  uint64_t itlb_hit_bit1_L2C_hit = 0;
++  uint64_t itlb_hit_bit1_LLC_hit = 0;
++  uint64_t itlb_hit_bit1_MEM_hit = 0;
++  // DTLB hit + bit_mask=0 (first access) -> final level
++  uint64_t dtlb_hit_bit0_L1I_hit = 0;
++  uint64_t dtlb_hit_bit0_L1D_hit = 0;
++  uint64_t dtlb_hit_bit0_L2C_hit = 0;
++  uint64_t dtlb_hit_bit0_LLC_hit = 0;
++  uint64_t dtlb_hit_bit0_MEM_hit = 0;
++  // DTLB hit + bit_mask=1 (repeated access) -> final level
++  uint64_t dtlb_hit_bit1_L1I_hit = 0;
++  uint64_t dtlb_hit_bit1_L1D_hit = 0;
++  uint64_t dtlb_hit_bit1_L2C_hit = 0;
++  uint64_t dtlb_hit_bit1_LLC_hit = 0;
++  uint64_t dtlb_hit_bit1_MEM_hit = 0;
++  // STLB hit + bit_mask=0 (first access) -> final level
++  uint64_t stlb_hit_bit0_L1I_hit = 0;
++  uint64_t stlb_hit_bit0_L1D_hit = 0;
++  uint64_t stlb_hit_bit0_L2C_hit = 0;
++  uint64_t stlb_hit_bit0_LLC_hit = 0;
++  uint64_t stlb_hit_bit0_MEM_hit = 0;
++  // STLB hit + bit_mask=1 (repeated access) -> final level
++  uint64_t stlb_hit_bit1_L1I_hit = 0;
++  uint64_t stlb_hit_bit1_L1D_hit = 0;
++  uint64_t stlb_hit_bit1_L2C_hit = 0;
++  uint64_t stlb_hit_bit1_LLC_hit = 0;
++  uint64_t stlb_hit_bit1_MEM_hit = 0;
++  //
++
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> hits = {};
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> misses = {};
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> mshr_merge = {};
+diff --git a/inc/champsim.h b/inc/champsim.h
+index 16a3481..3944642 100644
+--- a/inc/champsim.h
++++ b/inc/champsim.h
+@@ -32,6 +32,10 @@ extern const unsigned PAGE_SIZE;
+ extern const unsigned LOG2_BLOCK_SIZE;
+ extern const unsigned LOG2_PAGE_SIZE;
+ 
++// Trace flags
++extern bool flag_cpu_trace;
++extern bool flag_issue_translation_trace;
++
+ namespace champsim
+ {
+ struct deadlock : public std::exception {
+diff --git a/inc/channel.h b/inc/channel.h
+index 093eaba..f2ad9b6 100644
+--- a/inc/channel.h
++++ b/inc/channel.h
+@@ -27,6 +27,7 @@
+ #include "access_type.h"
+ #include "address.h"
+ #include "champsim.h"
++#include "instruction.h"
+ 
+ namespace champsim
+ {
+@@ -52,8 +53,18 @@ class channel
+   struct request {
+     bool forward_checked = false;
+     bool is_translated = true;
++    //HJ
++    bool trans_hit_L1D = false;
++    bool trans_hit_L2C = false;
++    bool trans_hit_LLC = false;
++    bool trans_hit_MEM = false;
++    //HJ
+     bool response_requested = true;
+ 
++    //@Minchan
++    uint8_t access_offset;
++    //
++
+     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
+     access_type type{access_type::LOAD};
+ 
+@@ -66,6 +77,8 @@ class channel
+     uint64_t instr_id = 0;
+     champsim::address ip{};
+ 
++    ooo_model_instr* instr = nullptr;
++
+     std::vector<uint64_t> instr_depend_on_me{};
+   };
+ 
+diff --git a/inc/core_stats.h b/inc/core_stats.h
+index 510a197..cdc000e 100644
+--- a/inc/core_stats.h
++++ b/inc/core_stats.h
+@@ -7,6 +7,21 @@
+ #include "event_counter.h"
+ #include "instruction.h"
+ 
++//@Minchan
++enum StallType{
++  ReOrderBuffer,
++  LoadQueue,
++  StoreQueue,
++  NUM_STALL_TYPE
++};
++
++enum ROBStallType{
++  ADDR_TRANS,
++  REPLAY_LOAD,
++  NON_REPLAY_LOAD,
++  NUM_ROB_STALL_TYPE
++};
++
+ struct cpu_stats {
+   std::string name;
+   long long begin_instrs = 0;
+@@ -15,6 +30,12 @@ struct cpu_stats {
+   long long end_cycles = 0;
+   uint64_t total_rob_occupancy_at_branch_mispredict = 0;
+ 
++  //@Minchan
++  uint64_t stall_cycles[StallType::NUM_STALL_TYPE] = {0};
++  uint64_t rob_stall_cycles[ROBStallType::NUM_ROB_STALL_TYPE] = {0};
++  uint32_t rob_stall_counts[ROBStallType::NUM_ROB_STALL_TYPE] = {0};
++  uint64_t non_stall_cycles = 0;
++
+   champsim::stats::event_counter<branch_type> total_branch_types = {};
+   champsim::stats::event_counter<branch_type> branch_type_misses = {};
+ 
+diff --git a/inc/event_counter.h b/inc/event_counter.h
+index e502684..af37945 100644
+--- a/inc/event_counter.h
++++ b/inc/event_counter.h
+@@ -44,7 +44,7 @@ public:
+     }
+   }
+ 
+-  void deallocate(key_type key)
++  void deallocate(key_type key) //문제부분
+   {
+     auto [key_iter, value_iter] = get_iter(key);
+     keys.erase(key_iter);
+diff --git a/inc/instruction.h b/inc/instruction.h
+index bb011ff..856d575 100644
+--- a/inc/instruction.h
++++ b/inc/instruction.h
+@@ -47,6 +47,9 @@ using PHYSICAL_REGISTER_ID = int16_t; // signed to use -1 to indicate no physica
+ using namespace std::literals::string_view_literals;
+ inline constexpr std::array branch_type_names{"BRANCH_DIRECT_JUMP"sv, "BRANCH_INDIRECT"sv,      "BRANCH_CONDITIONAL"sv,
+                                               "BRANCH_DIRECT_CALL"sv, "BRANCH_INDIRECT_CALL"sv, "BRANCH_RETURN"sv};
++inline constexpr std::array stall_type_names{"ROB_STALL"sv, "LQ_STALL"sv, "SQ_STALL"sv};
++
++inline constexpr std::array rob_stall_type_names{"ADDR_TRANS"sv, "REPLAY_LOAD"sv, "NON_REPLAY_LOAD"sv};
+ 
+ namespace champsim
+ {
+@@ -116,6 +119,18 @@ struct ooo_model_instr : champsim::program_ordered<ooo_model_instr> {
+   bool executed = false;
+   bool completed = false;
+ 
++  bool translated = false;
++  bool stlb_miss = false;
++  bool dtlb_miss = false;
++  bool itlb_miss = false;
++  bool stlb_miss_L1D_hit = false;
++  bool stlb_miss_L2C_hit = false;
++  bool stlb_miss_LLC_hit = false;
++  bool stlb_miss_MEM_hit = false;
++
++  bool mem_access_completed = false;
++  bool replay = false;
++
+   unsigned completed_mem_ops = 0;
+   int num_reg_dependent = 0;
+ 
+diff --git a/inc/ooo_cpu.h b/inc/ooo_cpu.h
+index c7d0524..2a8d7b1 100644
+--- a/inc/ooo_cpu.h
++++ b/inc/ooo_cpu.h
+@@ -46,45 +46,80 @@
+ #include "util/to_underlying.h"
+ 
+ class CACHE;
+-class CacheBus
+-{
++class CacheBus {
+   using channel_type = champsim::channel;
+   using request_type = typename channel_type::request_type;
+   using response_type = typename channel_type::response_type;
+ 
+-  channel_type* lower_level;
++  channel_type *lower_level;
+   uint32_t cpu;
+ 
+   friend class O3_CPU;
+ 
+ public:
+-  CacheBus(uint32_t cpu_idx, champsim::channel* ll) : lower_level(ll), cpu(cpu_idx) {}
++  CacheBus(uint32_t cpu_idx, champsim::channel *ll)
++      : lower_level(ll), cpu(cpu_idx) {}
+   bool issue_read(request_type packet);
+   bool issue_write(request_type packet);
++  bool issue_prefetch(request_type packet);
+ };
+ 
++// inwook start
++struct FTQ_ENTRY {
++  champsim::address ip;
++
++  std::array<uint8_t, 2> asid;
++
++  bool taken = false;
++  uint8_t termination_offset = 0;
++  uint8_t branch_type = 0;
++
++  std::unordered_map<uint64_t, uint64_t> demand_issue_cycle;
++
++  // Decoupled FDIP state
++  void predict_future_blocks();
++  uint64_t ftq_last_scan_instr_id = 0;
++  uint64_t ftq_last_scan_ip = 0;
++  uint8_t ftq_current_block_count = 0;
++
++  // States: 0=Invalid, 1=Pred-Complete, 2=Wait-Fill, 3=Ready
++  uint8_t fetch_state = 0;
++  uint64_t event_cycle = 0;
++};
++// inwook end
++
+ struct LSQ_ENTRY : champsim::program_ordered<LSQ_ENTRY> {
+   champsim::address virtual_address{};
+   champsim::address ip{};
+-  champsim::chrono::clock::time_point ready_time{champsim::chrono::clock::time_point::max()};
++  champsim::chrono::clock::time_point ready_time{
++      champsim::chrono::clock::time_point::max()};
+ 
+-  std::array<uint8_t, 2> asid = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
++  // @minchan: propagate ooo_model_instr*
++  ooo_model_instr *instr = nullptr;
++  bool forwarded = false;
++
++  std::array<uint8_t, 2> asid = {std::numeric_limits<uint8_t>::max(),
++                                 std::numeric_limits<uint8_t>::max()};
+   bool fetch_issued = false;
+ 
+   uint64_t producer_id = std::numeric_limits<uint64_t>::max();
+-  std::vector<std::reference_wrapper<std::optional<LSQ_ENTRY>>> lq_depend_on_me{};
+-
+-  LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address ip, std::array<uint8_t, 2> asid);
+-  void finish(ooo_model_instr& rob_entry) const;
+-  void finish(std::deque<ooo_model_instr>::iterator begin, std::deque<ooo_model_instr>::iterator end) const;
++  std::vector<std::reference_wrapper<std::optional<LSQ_ENTRY>>>
++      lq_depend_on_me{};
++
++  LSQ_ENTRY(ooo_model_instr *rob_entry, champsim::address addr,
++            champsim::program_ordered<LSQ_ENTRY>::id_type id,
++            champsim::address ip, std::array<uint8_t, 2> asid);
++  void finish(ooo_model_instr &rob_entry) const;
++  void finish(std::deque<ooo_model_instr>::iterator begin,
++              std::deque<ooo_model_instr>::iterator end) const;
+ };
+ 
+ // cpu
+-class O3_CPU : public champsim::operable
+-{
++class O3_CPU : public champsim::operable {
+ public:
+   uint32_t cpu = 0;
+-
++  uint64_t prev_rob_stall_cause_id = 0;
++  uint64_t prev_rob_stall_cause = 0;
+   // cycle
+   champsim::chrono::clock::time_point begin_phase_time{};
+   long long begin_phase_instr = 0;
+@@ -105,7 +140,9 @@ public:
+   // instruction buffer
+   struct dib_shift {
+     champsim::data::bits shamt;
+-    auto operator()(champsim::address val) const { return val.slice_upper(shamt); }
++    auto operator()(champsim::address val) const {
++      return val.slice_upper(shamt);
++    }
+   };
+   using dib_type = champsim::lru_table<champsim::address, dib_shift, dib_shift>;
+   dib_type DIB;
+@@ -121,8 +158,11 @@ public:
+   std::deque<LSQ_ENTRY> SQ;
+ 
+   // Constants
+-  const std::size_t IFETCH_BUFFER_SIZE, DISPATCH_BUFFER_SIZE, DECODE_BUFFER_SIZE, REGISTER_FILE_SIZE, ROB_SIZE, SQ_SIZE, DIB_HIT_BUFFER_SIZE;
+-  champsim::bandwidth::maximum_type FETCH_WIDTH, DECODE_WIDTH, DISPATCH_WIDTH, SCHEDULER_SIZE, EXEC_WIDTH, DIB_INORDER_WIDTH;
++  const std::size_t IFETCH_BUFFER_SIZE, DISPATCH_BUFFER_SIZE,
++      DECODE_BUFFER_SIZE, REGISTER_FILE_SIZE, ROB_SIZE, SQ_SIZE,
++      DIB_HIT_BUFFER_SIZE;
++  champsim::bandwidth::maximum_type FETCH_WIDTH, DECODE_WIDTH, DISPATCH_WIDTH,
++      SCHEDULER_SIZE, EXEC_WIDTH, DIB_INORDER_WIDTH;
+   champsim::bandwidth::maximum_type LQ_WIDTH, SQ_WIDTH;
+   champsim::bandwidth::maximum_type RETIRE_WIDTH;
+   champsim::chrono::clock::duration BRANCH_MISPREDICT_PENALTY;
+@@ -143,7 +183,7 @@ public:
+   std::deque<ooo_model_instr> input_queue;
+ 
+   CacheBus L1I_bus, L1D_bus;
+-  CACHE* l1i;
++  CACHE *l1i;
+ 
+   void initialize() final;
+   long operate() final;
+@@ -151,6 +191,24 @@ public:
+   void end_phase(unsigned cpu) final;
+ 
+   void initialize_instruction();
++  // inwook start
++  std::deque<FTQ_ENTRY> FTQ;
++  void process_ftq();
++  std::unordered_map<uint64_t, uint64_t> prefetch_issue_cycle;
++  std::unordered_map<uint64_t, uint64_t> demand_issue_cycle;
++
++  // Decoupled FDIP state
++  void predict_future_blocks();
++  uint64_t ftq_last_scan_instr_id = 0;
++  uint64_t ftq_last_scan_ip = 0;
++  uint8_t ftq_current_block_count = 0;
++
++  // Adaptive FTQ
++  uint64_t ftq_last_stats_version = 0;
++  uint64_t ftq_last_adjust_cycle = 0;
++  uint64_t ftq_accumulated_issued_count = 0;
++  // inwook end
++
+   long check_dib();
+   long fetch_instruction();
+   long promote_to_decode();
+@@ -163,25 +221,31 @@ public:
+   long handle_memory_return();
+   long retire_rob();
+ 
+-  bool do_init_instruction(ooo_model_instr& instr);
+-  bool do_predict_branch(ooo_model_instr& instr);
+-  void do_check_dib(ooo_model_instr& instr);
+-  bool do_fetch_instruction(std::deque<ooo_model_instr>::iterator begin, std::deque<ooo_model_instr>::iterator end);
+-  void do_dib_update(const ooo_model_instr& instr);
+-  void do_scheduling(ooo_model_instr& instr);
+-  void do_execution(ooo_model_instr& instr);
+-  void do_memory_scheduling(ooo_model_instr& instr);
+-  void do_complete_execution(ooo_model_instr& instr);
+-  void do_sq_forward_to_lq(LSQ_ENTRY& sq_entry, LSQ_ENTRY& lq_entry);
+-
+-  void do_finish_store(const LSQ_ENTRY& sq_entry);
+-  bool do_complete_store(const LSQ_ENTRY& sq_entry);
+-  bool execute_load(const LSQ_ENTRY& lq_entry);
++  bool do_init_instruction(ooo_model_instr &instr);
++  bool do_predict_branch(ooo_model_instr &instr);
++  void do_check_dib(ooo_model_instr &instr);
++  bool do_fetch_instruction(std::deque<ooo_model_instr>::iterator begin,
++                            std::deque<ooo_model_instr>::iterator end);
++  void do_dib_update(const ooo_model_instr &instr);
++  void do_scheduling(ooo_model_instr &instr);
++  void do_execution(ooo_model_instr &instr);
++  void do_memory_scheduling(ooo_model_instr &instr);
++  void do_complete_execution(ooo_model_instr &instr);
++  void do_sq_forward_to_lq(LSQ_ENTRY &sq_entry, LSQ_ENTRY &lq_entry);
++
++  void do_finish_store(const LSQ_ENTRY &sq_entry);
++  bool do_complete_store(const LSQ_ENTRY &sq_entry);
++  bool execute_load(const LSQ_ENTRY &lq_entry);
+ 
+   [[nodiscard]] auto roi_instr() const { return roi_stats.instrs(); }
+   [[nodiscard]] auto roi_cycle() const { return roi_stats.cycles(); }
+-  [[nodiscard]] auto sim_instr() const { return num_retired - begin_phase_instr; }
+-  [[nodiscard]] auto sim_cycle() const { return (current_time.time_since_epoch() / clock_period) - sim_stats.begin_cycles; }
++  [[nodiscard]] auto sim_instr() const {
++    return num_retired - begin_phase_instr;
++  }
++  [[nodiscard]] auto sim_cycle() const {
++    return (current_time.time_since_epoch() / clock_period) -
++           sim_stats.begin_cycles;
++  }
+ 
+   void print_deadlock() final;
+ 
+@@ -191,111 +255,165 @@ public:
+     virtual ~branch_module_concept() = default;
+ 
+     virtual void impl_initialize_branch_predictor() = 0;
+-    virtual void impl_last_branch_result(champsim::address ip, champsim::address target, bool taken, uint8_t branch_type) = 0;
+-    virtual bool impl_predict_branch(champsim::address ip, champsim::address predicted_target, bool always_taken, uint8_t branch_type) = 0;
++    virtual void impl_last_branch_result(champsim::address ip,
++                                         champsim::address target, bool taken,
++                                         uint8_t branch_type) = 0;
++    virtual bool impl_predict_branch(champsim::address ip,
++                                     champsim::address predicted_target,
++                                     bool always_taken,
++                                     uint8_t branch_type) = 0;
+   };
+ 
+   struct btb_module_concept {
+     virtual ~btb_module_concept() = default;
+ 
+     virtual void impl_initialize_btb() = 0;
+-    virtual void impl_update_btb(champsim::address ip, champsim::address predicted_target, bool taken, uint8_t branch_type) = 0;
+-    virtual std::pair<champsim::address, bool> impl_btb_prediction(champsim::address ip, uint8_t branch_type) = 0;
++    virtual void impl_update_btb(champsim::address ip,
++                                 champsim::address predicted_target, bool taken,
++                                 uint8_t branch_type) = 0;
++    virtual std::pair<champsim::address, bool>
++    impl_btb_prediction(champsim::address ip, uint8_t branch_type) = 0;
+   };
+ 
+   template <typename... Bs>
+   struct branch_module_model final : branch_module_concept {
+     std::tuple<Bs...> intern_;
+-    explicit branch_module_model(O3_CPU* cpu) : intern_(Bs{cpu}...) { (void)cpu; /* silence -Wunused-but-set-parameter when sizeof...(Bs) == 0 */ }
++    explicit branch_module_model(O3_CPU *cpu) : intern_(Bs{cpu}...) {
++      (void)
++          cpu; /* silence -Wunused-but-set-parameter when sizeof...(Bs) == 0 */
++    }
+ 
+     void impl_initialize_branch_predictor() final;
+-    void impl_last_branch_result(champsim::address ip, champsim::address target, bool taken, uint8_t branch_type) final;
+-    [[nodiscard]] bool impl_predict_branch(champsim::address ip, champsim::address predicted_target, bool always_taken, uint8_t branch_type) final;
++    void impl_last_branch_result(champsim::address ip, champsim::address target,
++                                 bool taken, uint8_t branch_type) final;
++    [[nodiscard]] bool impl_predict_branch(champsim::address ip,
++                                           champsim::address predicted_target,
++                                           bool always_taken,
++                                           uint8_t branch_type) final;
+   };
+ 
+-  template <typename... Ts>
+-  struct btb_module_model final : btb_module_concept {
++  template <typename... Ts> struct btb_module_model final : btb_module_concept {
+     std::tuple<Ts...> intern_;
+-    explicit btb_module_model(O3_CPU* cpu) : intern_(Ts{cpu}...) { (void)cpu; /* silence -Wunused-but-set-parameter when sizeof...(Ts) == 0 */ }
++    explicit btb_module_model(O3_CPU *cpu) : intern_(Ts{cpu}...) {
++      (void)
++          cpu; /* silence -Wunused-but-set-parameter when sizeof...(Ts) == 0 */
++    }
+ 
+     void impl_initialize_btb() final;
+-    void impl_update_btb(champsim::address ip, champsim::address predicted_target, bool taken, uint8_t branch_type) final;
+-    [[nodiscard]] std::pair<champsim::address, bool> impl_btb_prediction(champsim::address ip, uint8_t branch_type) final;
++    void impl_update_btb(champsim::address ip,
++                         champsim::address predicted_target, bool taken,
++                         uint8_t branch_type) final;
++    [[nodiscard]] std::pair<champsim::address, bool>
++    impl_btb_prediction(champsim::address ip, uint8_t branch_type) final;
+   };
+ 
+   std::unique_ptr<branch_module_concept> branch_module_pimpl;
+   std::unique_ptr<btb_module_concept> btb_module_pimpl;
+ 
+-  // NOLINTBEGIN(readability-make-member-function-const): legacy modules use non-const hooks
++  // NOLINTBEGIN(readability-make-member-function-const): legacy modules use
++  // non-const hooks
+   void impl_initialize_branch_predictor() const;
+-  void impl_last_branch_result(champsim::address ip, champsim::address target, bool taken, uint8_t branch_type) const;
+-  [[nodiscard]] bool impl_predict_branch(champsim::address ip, champsim::address predicted_target, bool always_taken, uint8_t branch_type) const;
++  void impl_last_branch_result(champsim::address ip, champsim::address target,
++                               bool taken, uint8_t branch_type) const;
++  [[nodiscard]] bool impl_predict_branch(champsim::address ip,
++                                         champsim::address predicted_target,
++                                         bool always_taken,
++                                         uint8_t branch_type) const;
+ 
+   void impl_initialize_btb() const;
+-  void impl_update_btb(champsim::address ip, champsim::address predicted_target, bool taken, uint8_t branch_type) const;
+-  [[nodiscard]] std::pair<champsim::address, bool> impl_btb_prediction(champsim::address ip, uint8_t branch_type) const;
++  void impl_update_btb(champsim::address ip, champsim::address predicted_target,
++                       bool taken, uint8_t branch_type) const;
++  [[nodiscard]] std::pair<champsim::address, bool>
++  impl_btb_prediction(champsim::address ip, uint8_t branch_type) const;
+   // NOLINTEND(readability-make-member-function-const)
+ 
+   template <typename... Bs, typename... Ts>
+-  explicit O3_CPU(champsim::core_builder<champsim::core_builder_module_type_holder<Bs...>, champsim::core_builder_module_type_holder<Ts...>> b)
++  explicit O3_CPU(
++      champsim::core_builder<champsim::core_builder_module_type_holder<Bs...>,
++                             champsim::core_builder_module_type_holder<Ts...>>
++          b)
+       : champsim::operable(b.m_clock_period), cpu(b.m_cpu),
+-        DIB(b.m_dib_set, b.m_dib_way, {champsim::data::bits{champsim::lg2(b.m_dib_window)}}, {champsim::data::bits{champsim::lg2(b.m_dib_window)}}),
+-        LQ(b.m_lq_size), IFETCH_BUFFER_SIZE(b.m_ifetch_buffer_size), DISPATCH_BUFFER_SIZE(b.m_dispatch_buffer_size), DECODE_BUFFER_SIZE(b.m_decode_buffer_size),
+-        REGISTER_FILE_SIZE(b.m_register_file_size), ROB_SIZE(b.m_rob_size), SQ_SIZE(b.m_sq_size), DIB_HIT_BUFFER_SIZE(b.m_dib_hit_buffer_size),
+-        FETCH_WIDTH(b.m_fetch_width), DECODE_WIDTH(b.m_decode_width), DISPATCH_WIDTH(b.m_dispatch_width), SCHEDULER_SIZE(b.m_schedule_width),
+-        EXEC_WIDTH(b.m_execute_width), DIB_INORDER_WIDTH(b.m_dib_inorder_width), LQ_WIDTH(b.m_lq_width), SQ_WIDTH(b.m_sq_width), RETIRE_WIDTH(b.m_retire_width),
+-        BRANCH_MISPREDICT_PENALTY(b.m_mispredict_penalty * b.m_clock_period), DISPATCH_LATENCY(b.m_dispatch_latency * b.m_clock_period),
+-        DECODE_LATENCY(b.m_decode_latency * b.m_clock_period), SCHEDULING_LATENCY(b.m_schedule_latency * b.m_clock_period),
+-        EXEC_LATENCY(b.m_execute_latency * b.m_clock_period), DIB_HIT_LATENCY(b.m_dib_hit_latency * b.m_clock_period), L1I_BANDWIDTH(b.m_l1i_bw),
+-        L1D_BANDWIDTH(b.m_l1d_bw), IN_QUEUE_SIZE(2 * champsim::to_underlying(b.m_fetch_width)), L1I_bus(b.m_cpu, b.m_fetch_queues),
+-        L1D_bus(b.m_cpu, b.m_data_queues), l1i(b.m_l1i), branch_module_pimpl(std::make_unique<branch_module_model<Bs...>>(this)),
+-        btb_module_pimpl(std::make_unique<btb_module_model<Ts...>>(this))
+-  {
+-  }
++        DIB(b.m_dib_set, b.m_dib_way,
++            {champsim::data::bits{champsim::lg2(b.m_dib_window)}},
++            {champsim::data::bits{champsim::lg2(b.m_dib_window)}}),
++        LQ(b.m_lq_size), IFETCH_BUFFER_SIZE(b.m_ifetch_buffer_size),
++        DISPATCH_BUFFER_SIZE(b.m_dispatch_buffer_size),
++        DECODE_BUFFER_SIZE(b.m_decode_buffer_size),
++        REGISTER_FILE_SIZE(b.m_register_file_size), ROB_SIZE(b.m_rob_size),
++        SQ_SIZE(b.m_sq_size), DIB_HIT_BUFFER_SIZE(b.m_dib_hit_buffer_size),
++        FETCH_WIDTH(b.m_fetch_width), DECODE_WIDTH(b.m_decode_width),
++        DISPATCH_WIDTH(b.m_dispatch_width), SCHEDULER_SIZE(b.m_schedule_width),
++        EXEC_WIDTH(b.m_execute_width), DIB_INORDER_WIDTH(b.m_dib_inorder_width),
++        LQ_WIDTH(b.m_lq_width), SQ_WIDTH(b.m_sq_width),
++        RETIRE_WIDTH(b.m_retire_width),
++        BRANCH_MISPREDICT_PENALTY(b.m_mispredict_penalty * b.m_clock_period),
++        DISPATCH_LATENCY(b.m_dispatch_latency * b.m_clock_period),
++        DECODE_LATENCY(b.m_decode_latency * b.m_clock_period),
++        SCHEDULING_LATENCY(b.m_schedule_latency * b.m_clock_period),
++        EXEC_LATENCY(b.m_execute_latency * b.m_clock_period),
++        DIB_HIT_LATENCY(b.m_dib_hit_latency * b.m_clock_period),
++        L1I_BANDWIDTH(b.m_l1i_bw), L1D_BANDWIDTH(b.m_l1d_bw),
++        L1I_bus(b.m_cpu, b.m_fetch_queues),
++        // IN_QUEUE_SIZE(2 * champsim::to_underlying(b.m_fetch_width)),
++        IN_QUEUE_SIZE(4096), L1D_bus(b.m_cpu, b.m_data_queues), l1i(b.m_l1i),
++        branch_module_pimpl(std::make_unique<branch_module_model<Bs...>>(this)),
++        btb_module_pimpl(std::make_unique<btb_module_model<Ts...>>(this)) {}
+ };
+ 
+ template <typename... Bs>
+-void O3_CPU::branch_module_model<Bs...>::impl_initialize_branch_predictor()
+-{
+-  [[maybe_unused]] auto process_one = [&](auto& b) {
++void O3_CPU::branch_module_model<Bs...>::impl_initialize_branch_predictor() {
++  [[maybe_unused]] auto process_one = [&](auto &b) {
+     using namespace champsim::modules;
+     if constexpr (branch_predictor::has_initialize<decltype(b)>)
+       b.initialize_branch_predictor();
+   };
+ 
+-  std::apply([&](auto&... b) { (..., process_one(b)); }, intern_);
++  std::apply([&](auto &...b) { (..., process_one(b)); }, intern_);
+ }
+ 
+ template <typename... Bs>
+-void O3_CPU::branch_module_model<Bs...>::impl_last_branch_result(champsim::address ip, champsim::address target, bool taken, uint8_t branch_type)
+-{
+-  [[maybe_unused]] auto process_one = [&](auto& b) {
++void O3_CPU::branch_module_model<Bs...>::impl_last_branch_result(
++    champsim::address ip, champsim::address target, bool taken,
++    uint8_t branch_type) {
++  [[maybe_unused]] auto process_one = [&](auto &b) {
+     using namespace champsim::modules;
+-    if constexpr (branch_predictor::has_last_branch_result<decltype(b), uint64_t, uint64_t, bool, uint8_t>)
+-      b.last_branch_result(ip.to<uint64_t>(), target.to<uint64_t>(), taken, branch_type);
+-    if constexpr (branch_predictor::has_last_branch_result<decltype(b), champsim::address, champsim::address, bool, uint8_t>)
++    if constexpr (branch_predictor::has_last_branch_result<
++                      decltype(b), uint64_t, uint64_t, bool, uint8_t>)
++      b.last_branch_result(ip.to<uint64_t>(), target.to<uint64_t>(), taken,
++                           branch_type);
++    if constexpr (branch_predictor::has_last_branch_result<
++                      decltype(b), champsim::address, champsim::address, bool,
++                      uint8_t>)
+       b.last_branch_result(ip, target, taken, branch_type);
+   };
+ 
+-  std::apply([&](auto&... b) { (..., process_one(b)); }, intern_);
++  std::apply([&](auto &...b) { (..., process_one(b)); }, intern_);
+ }
+ 
+ template <typename... Bs>
+-bool O3_CPU::branch_module_model<Bs...>::impl_predict_branch(champsim::address ip, champsim::address predicted_target, bool always_taken, uint8_t branch_type)
+-{
++bool O3_CPU::branch_module_model<Bs...>::impl_predict_branch(
++    champsim::address ip, champsim::address predicted_target, bool always_taken,
++    uint8_t branch_type) {
+   using return_type = bool;
+-  [[maybe_unused]] auto process_one = [&](auto& b) {
++  [[maybe_unused]] auto process_one = [&](auto &b) {
+     using namespace champsim::modules;
+     /* Strong addresses, full size */
+-    if constexpr (branch_predictor::has_predict_branch<decltype(b), champsim::address, champsim::address, bool, uint8_t>)
+-      return return_type{b.predict_branch(ip, predicted_target, always_taken, branch_type)};
++    if constexpr (branch_predictor::has_predict_branch<
++                      decltype(b), champsim::address, champsim::address, bool,
++                      uint8_t>)
++      return return_type{
++          b.predict_branch(ip, predicted_target, always_taken, branch_type)};
+ 
+     /* Raw integer addresses, full size */
+-    if constexpr (branch_predictor::has_predict_branch<decltype(b), uint64_t, uint64_t, bool, uint8_t>)
+-      return return_type{b.predict_branch(ip.to<uint64_t>(), predicted_target.to<uint64_t>(), always_taken, branch_type)};
++    if constexpr (branch_predictor::has_predict_branch<decltype(b), uint64_t,
++                                                       uint64_t, bool, uint8_t>)
++      return return_type{b.predict_branch(ip.to<uint64_t>(),
++                                          predicted_target.to<uint64_t>(),
++                                          always_taken, branch_type)};
+ 
+     /* Strong addresses, short size */
+-    if constexpr (branch_predictor::has_predict_branch<decltype(b), champsim::address>)
++    if constexpr (branch_predictor::has_predict_branch<decltype(b),
++                                                       champsim::address>)
+       return return_type{b.predict_branch(ip)};
+ 
+     /* Raw integer addresses, short size */
+@@ -306,46 +424,52 @@ bool O3_CPU::branch_module_model<Bs...>::impl_predict_branch(champsim::address i
+   };
+ 
+   if constexpr (sizeof...(Bs)) {
+-    return std::apply([&](auto&... b) { return (..., process_one(b)); }, intern_);
++    return std::apply([&](auto &...b) { return (..., process_one(b)); },
++                      intern_);
+   }
+   return return_type{};
+ }
+ 
+ template <typename... Ts>
+-void O3_CPU::btb_module_model<Ts...>::impl_initialize_btb()
+-{
+-  [[maybe_unused]] auto process_one = [&](auto& t) {
++void O3_CPU::btb_module_model<Ts...>::impl_initialize_btb() {
++  [[maybe_unused]] auto process_one = [&](auto &t) {
+     using namespace champsim::modules;
+     if constexpr (btb::has_initialize<decltype(t)>)
+       t.initialize_btb();
+   };
+ 
+-  std::apply([&](auto&... t) { (..., process_one(t)); }, intern_);
++  std::apply([&](auto &...t) { (..., process_one(t)); }, intern_);
+ }
+ 
+ template <typename... Ts>
+-void O3_CPU::btb_module_model<Ts...>::impl_update_btb(champsim::address ip, champsim::address predicted_target, bool taken, uint8_t branch_type)
+-{
+-  [[maybe_unused]] auto process_one = [&](auto& t) {
++void O3_CPU::btb_module_model<Ts...>::impl_update_btb(
++    champsim::address ip, champsim::address predicted_target, bool taken,
++    uint8_t branch_type) {
++  [[maybe_unused]] auto process_one = [&](auto &t) {
+     using namespace champsim::modules;
+-    if constexpr (btb::has_update_btb<decltype(t), champsim::address, champsim::address, bool, uint8_t>)
++    if constexpr (btb::has_update_btb<decltype(t), champsim::address,
++                                      champsim::address, bool, uint8_t>)
+       t.update_btb(ip, predicted_target, taken, branch_type);
+-    if constexpr (btb::has_update_btb<decltype(t), uint64_t, uint64_t, bool, uint8_t>)
+-      t.update_btb(ip.to<uint64_t>(), predicted_target.to<uint64_t>(), taken, branch_type);
++    if constexpr (btb::has_update_btb<decltype(t), uint64_t, uint64_t, bool,
++                                      uint8_t>)
++      t.update_btb(ip.to<uint64_t>(), predicted_target.to<uint64_t>(), taken,
++                   branch_type);
+   };
+ 
+-  std::apply([&](auto&... t) { (..., process_one(t)); }, intern_);
++  std::apply([&](auto &...t) { (..., process_one(t)); }, intern_);
+ }
+ 
+ template <typename... Ts>
+-std::pair<champsim::address, bool> O3_CPU::btb_module_model<Ts...>::impl_btb_prediction(champsim::address ip, uint8_t branch_type)
+-{
++std::pair<champsim::address, bool>
++O3_CPU::btb_module_model<Ts...>::impl_btb_prediction(champsim::address ip,
++                                                     uint8_t branch_type) {
+   using return_type = std::pair<champsim::address, bool>;
+-  [[maybe_unused]] auto process_one = [&](auto& t) {
++  [[maybe_unused]] auto process_one = [&](auto &t) {
+     using namespace champsim::modules;
+ 
+     /* Strong addresses, full size */
+-    if constexpr (btb::has_btb_prediction<decltype(t), champsim::address, uint8_t>)
++    if constexpr (btb::has_btb_prediction<decltype(t), champsim::address,
++                                          uint8_t>)
+       return return_type{t.btb_prediction(ip, branch_type)};
+ 
+     /* Strong addresses, short size */
+@@ -364,7 +488,8 @@ std::pair<champsim::address, bool> O3_CPU::btb_module_model<Ts...>::impl_btb_pre
+   };
+ 
+   if constexpr (sizeof...(Ts) > 0) {
+-    return std::apply([&](auto&... t) { return (..., process_one(t)); }, intern_);
++    return std::apply([&](auto &...t) { return (..., process_one(t)); },
++                      intern_);
+   }
+   return return_type{};
+ }
+diff --git a/inc/ptw.h b/inc/ptw.h
+index 736ca8f..fa0b640 100644
+--- a/inc/ptw.h
++++ b/inc/ptw.h
+@@ -55,6 +55,8 @@ class PageTableWalker : public champsim::operable
+     champsim::address v_address{};
+     champsim::waitable<champsim::address> data{};
+ 
++    ooo_model_instr* instr = nullptr;
++
+     std::vector<uint64_t> instr_depend_on_me{};
+     std::vector<std::deque<response_type>*> to_return{};
+ 
+diff --git a/src/cache.cc b/src/cache.cc
+index 9776c41..98d53ee 100644
+--- a/src/cache.cc
++++ b/src/cache.cc
+@@ -1,26 +1,13 @@
+-/*
+- *    Copyright 2023 The ChampSim Contributors
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+ #include "cache.h"
+ 
+ #include <algorithm>
+ #include <cassert>
+ #include <cmath>
++#include <cstdio>
++#include <cstdlib>
+ #include <iomanip>
+ #include <numeric>
++#include <string>
+ #include <fmt/core.h>
+ 
+ #include "bandwidth.h"
+@@ -31,7 +18,7 @@
+ #include "util/algorithm.h"
+ #include "util/bits.h"
+ #include "util/span.h"
+-
++bool flag_issue_translation_trace = false;
+ CACHE::CACHE(CACHE&& other)
+     : operable(other),
+ 
+@@ -50,6 +37,80 @@ CACHE::CACHE(CACHE&& other)
+   repl_module_pimpl->bind(this);
+ }
+ 
++namespace
++{
++// STLB trace logging (writes TSV, optionally piped to xz when path ends with
++// .xz)
++FILE* stlb_trace_fp = nullptr;
++bool stlb_trace_is_pipe = false;
++
++inline const char* access_type_cstr(access_type t)
++{
++  switch (t) {
++  case access_type::LOAD:
++    return "LOAD";
++  case access_type::RFO:
++    return "RFO";
++  case access_type::PREFETCH:
++    return "PREFETCH";
++  case access_type::WRITE:
++    return "WRITE";
++  case access_type::TRANSLATION:
++    return "TRANSLATION";
++  default:
++    return "OTHER";
++  }
++}
++
++void stlb_trace_open_once()
++{
++  if (stlb_trace_fp)
++    return;
++  const char* path = std::getenv("STLB_HIT_TRACE");
++  if (!path || !*path)
++    return;
++
++  std::string out_path{path};
++  if (out_path.size() >= 3 && out_path.rfind(".xz") == out_path.size() - 3) {
++    std::string cmd = std::string{"xz -T0 > "} + out_path;
++    stlb_trace_fp = popen(cmd.c_str(), "w");
++    stlb_trace_is_pipe = true;
++  } else {
++    stlb_trace_fp = std::fopen(out_path.c_str(), "w");
++    stlb_trace_is_pipe = false;
++  }
++
++  if (stlb_trace_fp) {
++    // Fixed-width header for aligned columns (added type column, widened
++    // numeric widths)
++    std::fprintf(stlb_trace_fp, "%-10s %-6s %-28s %28s %28s %28s %28s\n", "type", "tlb_miss", "stlb_result", "vpn", "ppn", "pc", "offset");
++    std::fflush(stlb_trace_fp);
++  }
++}
++
++void stlb_trace_close()
++{
++  if (!stlb_trace_fp)
++    return;
++  if (stlb_trace_is_pipe)
++    pclose(stlb_trace_fp);
++  else
++    std::fclose(stlb_trace_fp);
++  stlb_trace_fp = nullptr;
++  stlb_trace_is_pipe = false;
++}
++
++inline void stlb_trace_write(const char* tlb_miss, const char* stlb_result, const char* type_s, uint64_t vpn, uint64_t ppn, uint64_t pc, uint32_t offset)
++{
++  if (!stlb_trace_fp)
++    return;
++  // Fixed-width row matching header widths: vpn/ppn/pc as hex, all numeric
++  // right-aligned to width 20
++  std::fprintf(stlb_trace_fp, "%-10s %-6s %-28s %28llx %28llx %28llx %28u\n", type_s, tlb_miss, stlb_result, (unsigned long long)vpn, (unsigned long long)ppn,
++               (unsigned long long)pc, (unsigned)offset);
++}
++} // namespace
++
+ auto CACHE::operator=(CACHE&& other) -> CACHE&
+ {
+   this->clock_period = other.clock_period;
+@@ -92,10 +153,18 @@ auto CACHE::operator=(CACHE&& other) -> CACHE&
+   return *this;
+ }
+ 
++//@Minchan 여기서 req.instr를 가져오면서 pointer를 복사해 오는데 그게 문제인듯.
+ CACHE::tag_lookup_type::tag_lookup_type(const request_type& req, bool local_pref, bool skip)
+     : address(req.address), v_address(req.v_address), data(req.data), ip(req.ip), instr_id(req.instr_id), pf_metadata(req.pf_metadata), cpu(req.cpu),
+-      type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated), instr_depend_on_me(req.instr_depend_on_me)
++      instr(req.instr), type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated),
++      instr_depend_on_me(req.instr_depend_on_me)
+ {
++  //@Minchan: trace instr_id 51739864
++  if (req.type == access_type::LOAD && flag_issue_translation_trace) {
++    fmt::print("[CACHE_TRACE] tag_lookup_type constructor instr_id: {} ptr: {} "
++               "type: {} address: {} v_address: {}\n",
++               req.instr_id, static_cast<void*>(req.instr), access_type_cstr(req.type), req.address.to<uint64_t>(), req.v_address.to<uint64_t>());
++  }
+ }
+ 
+ CACHE::mshr_type::mshr_type(const tag_lookup_type& req, champsim::chrono::clock::time_point _time_enqueued)
+@@ -116,7 +185,8 @@ CACHE::mshr_type CACHE::mshr_type::merge(mshr_type predecessor, mshr_type succes
+ 
+   mshr_type retval{(successor.type == access_type::PREFETCH) ? predecessor : successor};
+ 
+-  // set the time enqueued to the predecessor unless its a demand into prefetch, in which case we use the successor
++  // set the time enqueued to the predecessor unless its a demand into prefetch,
++  // in which case we use the successor
+   retval.time_enqueued =
+       ((successor.type != access_type::PREFETCH && predecessor.type == access_type::PREFETCH)) ? successor.time_enqueued : predecessor.time_enqueued;
+   retval.instr_depend_on_me = merged_instr;
+@@ -183,8 +253,9 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
+   const auto way_idx = std::distance(set_begin, way);             // cast protected by earlier assertion
+ 
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} set: {} way: {} type: {} prefetch_metadata: {} cycle_enqueued: {} cycle: {}\n", NAME, __func__,
+-               fill_mshr.instr_id, fill_mshr.address, fill_mshr.v_address, get_set_index(fill_mshr.address), way_idx,
++    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} set: {} way: {} "
++               "type: {} prefetch_metadata: {} cycle_enqueued: {} cycle: {}\n",
++               NAME, __func__, fill_mshr.instr_id, fill_mshr.address, fill_mshr.v_address, get_set_index(fill_mshr.address), way_idx,
+                access_type_names.at(champsim::to_underlying(fill_mshr.type)), fill_mshr.data_promise->pf_metadata,
+                (fill_mshr.time_enqueued.time_since_epoch()) / clock_period, (current_time.time_since_epoch()) / clock_period);
+   }
+@@ -225,6 +296,7 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
+   if (way != set_end) {
+     if (way->valid && way->prefetch) {
+       ++sim_stats.pf_useless;
++      track_utility_and_timeliness(false, false);
+     }
+ 
+     if (fill_mshr.type == access_type::PREFETCH) {
+@@ -240,7 +312,7 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
+   sim_stats.mshr_return.increment(std::pair{fill_mshr.type, fill_mshr.cpu});
+ 
+   response_type response{fill_mshr.address, fill_mshr.v_address, fill_mshr.data_promise->data, metadata_thru, fill_mshr.instr_depend_on_me};
+-  for (auto* ret : fill_mshr.to_return) {
++  for (auto* ret : fill_mshr.to_return) { // return 보내는 곳곳
+     ret->push_back(response);
+   }
+ 
+@@ -251,16 +323,20 @@ bool CACHE::try_hit(const tag_lookup_type& handle_pkt)
+ {
+   cpu = handle_pkt.cpu;
+ 
+-  // access cache
+-  auto [set_begin, set_end] = get_set_span(handle_pkt.address);
+-  auto way = std::find_if(set_begin, set_end, [matcher = matches_address(handle_pkt.address)](const auto& x) { return x.valid && matcher(x); });
+-  const auto hit = (way != set_end);
++  auto [set_begin, set_end] = this->get_set_span(handle_pkt.address);
++  auto way = std::find_if(set_begin, set_end, [matcher = this->matches_address(handle_pkt.address)](const auto& x) { return x.valid && matcher(x); });
++  const bool hit = (way != set_end);
++  // HJ
+   const auto useful_prefetch = (hit && way->prefetch && !handle_pkt.prefetch_from_this);
+-
++  // const auto useful_prefetch = (hit && way->prefetch &&
++  // !handle_pkt.prefetch_from_this && handle_pkt.type !=
++  // access_type::PREFETCH);
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} data: {} set: {} way: {} ({}) type: {} cycle: {}\n", NAME, __func__, handle_pkt.instr_id,
+-               handle_pkt.address, handle_pkt.v_address, handle_pkt.data, get_set_index(handle_pkt.address), std::distance(set_begin, way),
+-               hit ? "HIT" : "MISS", access_type_names.at(champsim::to_underlying(handle_pkt.type)), current_time.time_since_epoch() / clock_period);
++    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} data: {} set: "
++               "{} way: {} ({}) type: {} cycle: {}\n",
++               NAME, __func__, handle_pkt.instr_id, handle_pkt.address, handle_pkt.v_address, handle_pkt.data, get_set_index(handle_pkt.address),
++               std::distance(set_begin, way), hit ? "HIT" : "MISS", access_type_names.at(champsim::to_underlying(handle_pkt.type)),
++               current_time.time_since_epoch() / clock_period);
+   }
+ 
+   auto metadata_thru = handle_pkt.pf_metadata;
+@@ -272,13 +348,72 @@ bool CACHE::try_hit(const tag_lookup_type& handle_pkt)
+   const auto way_idx = std::distance(set_begin, way);
+   impl_update_replacement_state(handle_pkt.cpu, get_set_index(handle_pkt.address), way_idx, module_address(handle_pkt), handle_pkt.ip, {}, handle_pkt.type,
+                                 hit);
++  //@Minchan
++  if (NAME == "cpu0_STLB" && !hit && !warmup) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->stlb_miss = true;
++  }
++  if (NAME == "cpu0_DTLB" && !hit && !warmup) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->dtlb_miss = true;
++  }
++  if (NAME == "cpu0_ITLB" && !hit && !warmup) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->itlb_miss = true;
++  }
++  if (NAME == "cpu0_L1D" && hit && !warmup && handle_pkt.type == access_type::TRANSLATION) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->stlb_miss_L1D_hit = true;
++  }
++  if (NAME == "cpu0_L2C" && hit && !warmup && handle_pkt.type == access_type::TRANSLATION) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->stlb_miss_L2C_hit = true;
++  }
++  if (NAME == "LLC" && hit && !warmup && handle_pkt.type == access_type::TRANSLATION) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->stlb_miss_LLC_hit = true;
++  }
++  if (NAME == "LLC" && !hit && !warmup && handle_pkt.type == access_type::TRANSLATION) {
++    // fmt::print("cycles: {} instr_id: {} STLB Miss\n",
++    // current_time.time_since_epoch() / clock_period, handle_pkt.instr_id);
++    if (handle_pkt.instr)
++      handle_pkt.instr->stlb_miss_MEM_hit = true;
++  }
+ 
+   if (hit) {
+     sim_stats.hits.increment(std::pair{handle_pkt.type, handle_pkt.cpu});
+ 
++    // inwook: L1I Demand Access Breakdown (Type 1: Hit Breakdown)
++    if (NAME == "cpu0_L1I" && handle_pkt.type == access_type::LOAD && !warmup) {
++      ++sim_stats.fdip_l1i_total_access;
++      if (way->prefetch) {
++        ++sim_stats.fdip_l1i_hit;
++      } else {
++        ++sim_stats.fdip_l1i_hit_non_pf;
++      }
++    }
++
++    if (handle_pkt.type == access_type::LOAD && !warmup && flag_issue_translation_trace) {
++      fmt::print("[CACHE_TRACE] try_hit sending response instr_id: {} ptr: {} "
++                 "cycle: {} cache: {}\n",
++                 handle_pkt.instr_id, static_cast<void*>(handle_pkt.instr), current_time.time_since_epoch() / clock_period, NAME);
++    }
++
+     response_type response{handle_pkt.address, handle_pkt.v_address, way->data, metadata_thru, handle_pkt.instr_depend_on_me};
+     for (auto* ret : handle_pkt.to_return) {
+-      ret->push_back(response);
++      ret->push_back(response); // return 보내는 곳곳
+     }
+ 
+     way->dirty |= (handle_pkt.type == access_type::WRITE);
+@@ -286,8 +421,15 @@ bool CACHE::try_hit(const tag_lookup_type& handle_pkt)
+     // update prefetch stats and reset prefetch bit
+     if (useful_prefetch) {
+       ++sim_stats.pf_useful;
++      // if (!warmup)
++      //   printf("[%s] pf_useful\n", NAME.c_str());
++      track_utility_and_timeliness(true, true);
+       way->prefetch = false;
+     }
++
++    // STLB hit logging
++    // Removed per-lookup STLB hit logging to avoid duplicates; STLB-hit logs
++    // are recorded at final access level.
+   }
+ 
+   return hit;
+@@ -313,6 +455,8 @@ auto CACHE::mshr_and_forward_packet(const tag_lookup_type& handle_pkt) -> std::p
+ 
+   fwd_pkt.instr_depend_on_me = handle_pkt.instr_depend_on_me;
+   fwd_pkt.response_requested = (!handle_pkt.prefetch_from_this || !handle_pkt.skip_fill);
++  //@Minchan
++  fwd_pkt.instr = handle_pkt.instr;
+ 
+   return std::pair{std::move(to_allocate), std::move(fwd_pkt)};
+ }
+@@ -320,11 +464,11 @@ auto CACHE::mshr_and_forward_packet(const tag_lookup_type& handle_pkt) -> std::p
+ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
+ {
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} type: {} local_prefetch: {} cycle: {}\n", NAME, __func__, handle_pkt.instr_id,
+-               handle_pkt.address, handle_pkt.v_address, access_type_names.at(champsim::to_underlying(handle_pkt.type)), handle_pkt.prefetch_from_this,
+-               current_time.time_since_epoch() / clock_period);
++    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} type: {} "
++               "local_prefetch: {} cycle: {}\n",
++               NAME, __func__, handle_pkt.instr_id, handle_pkt.address, handle_pkt.v_address, access_type_names.at(champsim::to_underlying(handle_pkt.type)),
++               handle_pkt.prefetch_from_this, current_time.time_since_epoch() / clock_period);
+   }
+-
+   mshr_type to_allocate{handle_pkt, current_time};
+ 
+   cpu = handle_pkt.cpu;
+@@ -341,6 +485,18 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
+       // Mark the prefetch as useful
+       if (mshr_entry->prefetch_from_this) {
+         ++sim_stats.pf_useful;
++        track_utility_and_timeliness(true, false);
++      }
++
++      // inwook: L1I Late Prefetch (Merge) - Demand merged into inflight
++      // prefetch MSHR
++      if (NAME == "cpu0_L1I" && handle_pkt.type == access_type::LOAD && !warmup) {
++        ++sim_stats.fdip_l1i_mshr_merge;
++      }
++    } else {
++      // inwook: L1I Merge into non-prefetch MSHR (demand-into-demand merge)
++      if (NAME == "cpu0_L1I" && handle_pkt.type == access_type::LOAD && !warmup) {
++        ++sim_stats.fdip_l1i_mshr_merge_non_pf;
+       }
+     }
+ 
+@@ -350,7 +506,8 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
+     *mshr_entry = mshr_type::merge(*mshr_entry, to_allocate);
+   } else {
+     if (mshr_full) { // not enough MSHR resource
+-      return false;  // TODO should we allow prefetches anyway if they will not be filled to this level?
++      return false;  // TODO should we allow prefetches anyway if they will not
++                     // be filled to this level?
+     }
+ 
+     const bool send_to_rq = (prefetch_as_load || handle_pkt.type != access_type::PREFETCH);
+@@ -364,19 +521,30 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
+     if (mshr_pkt.second.response_requested) {
+       MSHR.emplace_back(std::move(mshr_pkt.first));
+     }
++
++    // inwook: L1I Demand Miss - Not covered by prefetch
++    if (NAME == "cpu0_L1I" && handle_pkt.type == access_type::LOAD && !warmup) {
++      ++sim_stats.fdip_l1i_miss;
++    }
+   }
+ 
+   sim_stats.misses.increment(std::pair{handle_pkt.type, handle_pkt.cpu});
+ 
++  // inwook: Successful L1I Miss Handling (Merge or New Alloc)
++  if (NAME == "cpu0_L1I" && handle_pkt.type == access_type::LOAD && !warmup) {
++    ++sim_stats.fdip_l1i_total_access;
++  }
++
+   return true;
+ }
+ 
+ bool CACHE::handle_write(const tag_lookup_type& handle_pkt)
+ {
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} type: {} local_prefetch: {} cycle: {}\n", NAME, __func__, handle_pkt.instr_id,
+-               handle_pkt.address, handle_pkt.v_address, access_type_names.at(champsim::to_underlying(handle_pkt.type)), handle_pkt.prefetch_from_this,
+-               current_time.time_since_epoch() / clock_period);
++    fmt::print("[{}] {} instr_id: {} address: {} v_address: {} type: {} "
++               "local_prefetch: {} cycle: {}\n",
++               NAME, __func__, handle_pkt.instr_id, handle_pkt.address, handle_pkt.v_address, access_type_names.at(champsim::to_underlying(handle_pkt.type)),
++               handle_pkt.prefetch_from_this, current_time.time_since_epoch() / clock_period);
+   }
+ 
+   mshr_type to_allocate{handle_pkt, current_time};
+@@ -388,51 +556,325 @@ bool CACHE::handle_write(const tag_lookup_type& handle_pkt)
+   return true;
+ }
+ 
++// HJ
+ template <bool UpdateRequest>
+ auto CACHE::initiate_tag_check(champsim::channel* ul)
+ {
+-  return [time = current_time + (warmup ? champsim::chrono::clock::duration{} : HIT_LATENCY), ul](const auto& entry) {
++  const auto base_now = current_time;
++
++  return [this, base_now, ul](const auto& entry) {
++    // Side-effect-free tag probe to know if current address is present.
++    const bool hit = this->probe_tag_hit_only(entry.address);
++
++    // Convert source entry (request or prior tag) into the in-flight tag entry.
+     CACHE::tag_lookup_type retval{entry};
+-    retval.event_cycle = time;
+ 
++    //  const bool oracle_all_tlb_miss = (!hit) && (NAME != "cpu0_L1D") && (NAME
++    //  != "cpu0_L1I") &&  (retval.instr && (retval.instr->stlb_miss ||
++    //  retval.instr->dtlb_miss || retval.instr->itlb_miss) && retval.instr_id);
++    //  const bool oracle_stlb_miss = (!hit) && (NAME != "cpu0_L1D") && (NAME !=
++    //  "cpu0_L1I") &&  (retval.instr && (retval.instr->stlb_miss &&
++    //  (retval.instr->dtlb_miss || retval.instr->itlb_miss)) &&
++    //  retval.instr_id); const bool oracle_stlb_hit = (!hit) && (NAME !=
++    //  "cpu0_L1D") && (NAME != "cpu0_L1I") &&  (retval.instr &&
++    //  (!retval.instr->stlb_miss && (retval.instr->dtlb_miss ||
++    //  retval.instr->itlb_miss)) && retval.instr_id);
++    const bool do_log = !warmup;
++    const bool is_code = (retval.ip == retval.v_address);
++
++    // DTLB hit -> where did the final access hit?
++    if (retval.instr && !retval.instr->dtlb_miss && retval.type == access_type::LOAD && do_log && !is_code) {
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_hit_MEM_hit;
++        }
++      }
++    }
++
++    // ITLB hit -> where did the final access hit?
++    if (retval.instr && !retval.instr->itlb_miss && retval.type == access_type::LOAD && do_log && is_code) {
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_hit_MEM_hit;
++        }
++      }
++    }
++
++    if (retval.instr && retval.instr->dtlb_miss && !retval.instr->stlb_miss && retval.type == access_type::LOAD && do_log && !is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_miss_stlb_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_miss_stlb_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_miss_stlb_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_miss_stlb_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_miss_stlb_hit_MEM_hit;
++        }
++      }
++    }
++
++    if (retval.instr && retval.instr->dtlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_L1D_hit && retval.type == access_type::LOAD && do_log
++        && !is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L1D_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L1D_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L1D_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_miss_stlb_miss_L1D_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_miss_stlb_miss_L1D_hit_MEM_hit;
++        }
++      }
++    }
++    // DTLB miss + STLB miss (translation resolved at L2C) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->dtlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_L2C_hit && retval.type == access_type::LOAD && do_log
++        && !is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L2C_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L2C_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_L2C_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_miss_stlb_miss_L2C_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_miss_stlb_miss_L2C_hit_MEM_hit;
++        }
++      }
++    }
++
++    // DTLB miss + STLB miss (translation resolved at LLC) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->dtlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_LLC_hit && retval.type == access_type::LOAD && do_log
++        && !is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_LLC_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_LLC_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_LLC_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_miss_stlb_miss_LLC_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_miss_stlb_miss_LLC_hit_MEM_hit;
++        }
++      }
++    }
++
++    // DTLB miss + STLB miss (translation resolved at MEM) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->dtlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_MEM_hit && retval.type == access_type::LOAD && do_log
++        && !is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_MEM_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_MEM_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.dtlb_miss_stlb_miss_MEM_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.dtlb_miss_stlb_miss_MEM_hit_LLC_hit;
++        } else {
++          ++sim_stats.dtlb_miss_stlb_miss_MEM_hit_MEM_hit;
++        }
++      }
++    }
++    // ITLB miss + STLB hit -> where did the final access hit?
++    if (retval.instr && retval.instr->itlb_miss && !retval.instr->stlb_miss && retval.type == access_type::LOAD && do_log && is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_miss_stlb_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_miss_stlb_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_miss_stlb_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_miss_stlb_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_miss_stlb_hit_MEM_hit;
++        }
++      }
++    }
++
++    // ITLB miss + STLB miss (translation resolved at L1D) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->itlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_L1D_hit && retval.type == access_type::LOAD && do_log
++        && is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L1D_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L1D_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L1D_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_miss_stlb_miss_L1D_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_miss_stlb_miss_L1D_hit_MEM_hit;
++        }
++      }
++    }
++
++    // ITLB miss + STLB miss (translation resolved at L2C) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->itlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_L2C_hit && retval.type == access_type::LOAD && do_log
++        && is_code) {
++
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L2C_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L2C_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_L2C_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_miss_stlb_miss_L2C_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_miss_stlb_miss_L2C_hit_MEM_hit;
++        }
++      }
++    }
++
++    // ITLB miss + STLB miss (translation resolved at LLC) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->itlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_LLC_hit && retval.type == access_type::LOAD && do_log
++        && is_code) {
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_LLC_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_LLC_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_LLC_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_miss_stlb_miss_LLC_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_miss_stlb_miss_LLC_hit_MEM_hit;
++        }
++      }
++    }
++
++    // ITLB miss + STLB miss (translation resolved at MEM) -> where did the
++    // final access hit?
++    if (retval.instr && retval.instr->itlb_miss && retval.instr->stlb_miss && retval.instr->stlb_miss_MEM_hit && retval.type == access_type::LOAD && do_log
++        && is_code) {
++      if (NAME == "cpu0_L1I" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_MEM_hit_L1I_hit;
++      } else if (NAME == "cpu0_L1D" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_MEM_hit_L1D_hit;
++      } else if (NAME == "cpu0_L2C" && hit) {
++        ++sim_stats.itlb_miss_stlb_miss_MEM_hit_L2C_hit;
++      } else if (NAME == "LLC") {
++        if (hit) {
++          ++sim_stats.itlb_miss_stlb_miss_MEM_hit_LLC_hit;
++        } else {
++          ++sim_stats.itlb_miss_stlb_miss_MEM_hit_MEM_hit;
++        }
++      }
++    }
++
++    // fmt::print("L1D {}, L2C {}, LLC {}, MEM
++    // {}\n",retval.trans_hit_L1D,retval.trans_hit_L2C, retval.trans_hit_LLC,
++    // retval.trans_hit_MEM);
++
++    // Schedule when this tag check will be ready.
++
++    //@Minchan: trace all load instructions
++    if (retval.type == access_type::LOAD && !warmup && flag_issue_translation_trace) {
++      auto event_cycle_val = base_now + (warmup ? champsim::chrono::clock::duration{} : HIT_LATENCY);
++      fmt::print("[CACHE_TRACE] initiate_tag_check scheduling instr_id: {} "
++                 "ptr: {} cycle: {} event_cycle: {} cache: {}\n",
++                 retval.instr_id, static_cast<void*>(retval.instr), current_time.time_since_epoch() / clock_period,
++                 event_cycle_val.time_since_epoch() / clock_period, NAME);
++    }
++
++    // Oracle이 활성화되면 HIT_LATENCY를 0으로 설정 (즉시 처리)
++    // warmup이거나 oracle이 true이면 지연 없음, 그렇지 않으면 HIT_LATENCY 추가
++    retval.event_cycle = base_now
++                         + (warmup ? champsim::chrono::clock::duration{} : HIT_LATENCY
++                            // warmup || (oracle_all_tlb_miss) ?
++                            // champsim::chrono::clock::duration{} : HIT_LATENCY warmup ||
++                            // (oracle_stlb_miss) ? champsim::chrono::clock::duration{} :
++                            // HIT_LATENCY warmup || (oracle_stlb_hit) ?
++                            // champsim::chrono::clock::duration{} : HIT_LATENCY
++
++                         );
++    //  if(oracle) {
++    //   fmt::print("oracle: {} instr_id: {} cycle: {} \n", oracle,
++    //   retval.instr_id, current_time.time_since_epoch() / clock_period);
++    //  }
+     if constexpr (UpdateRequest) {
+       if (entry.response_requested) {
+         retval.to_return = {&ul->returned};
+       }
+     } else {
+-      (void)ul; // supress warning about ul being unused
+-    }
+-
+-    if constexpr (champsim::debug_print) {
+-      fmt::print("[TAG] initiate_tag_check instr_id: {} address: {} v_address: {} type: {} response_requested: {}\n", retval.instr_id, retval.address,
+-                 retval.v_address, access_type_names.at(champsim::to_underlying(retval.type)), !std::empty(retval.to_return));
++      (void)ul;
+     }
+ 
+     return retval;
+   };
+ }
++// HJ
+ 
+-long CACHE::operate()
++long CACHE::operate() // cache 역할을 수행하는 핵심 멤버 함수
+ {
+   long progress{0};
+ 
+-  auto is_ready = [time = current_time](const auto& entry) {
++  auto is_ready = [time = current_time](const auto& entry) { // entry가 준비되었는지 확인하는 람다 함수
+     return entry.event_cycle <= time;
+   };
+-  auto is_translated = [](const auto& entry) {
++  auto is_translated = [](const auto& entry) { // address translation이 완료된 entry인지 확인
+     return entry.is_translated;
+   };
+ 
++  // 1) 같은 사이클 내 상위 채널들(RQ/WQ/PQ)의 충돌을 사전에 정리
+   for (auto* ul : upper_levels) {
+     ul->check_collision();
+   }
+ 
+   // Finish returns
++  // lower_level->returned : miss에 대해 lower level에서 돌아온 data queue //
++  // finish_packet : mshr에서 대응 entry를 찾아 처리
+   std::for_each(std::cbegin(lower_level->returned), std::cend(lower_level->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
+   progress += std::distance(std::cbegin(lower_level->returned), std::cend(lower_level->returned));
+   lower_level->returned.clear();
+ 
+   // Finish translations
++  // @Minchan
++  //하위 TLB/PTW에서 번역 완료된 응답을 받아 처리 -> fill은 아니고 대기 요청에
++  // paddr주고 is_translated = true 설정
+   if (lower_translate != nullptr) {
+     std::for_each(std::cbegin(lower_translate->returned), std::cend(lower_translate->returned), [this](const auto& pkt) { this->finish_translation(pkt); });
+     progress += std::distance(std::cbegin(lower_translate->returned), std::cend(lower_translate->returned));
+@@ -440,27 +882,48 @@ long CACHE::operate()
+   }
+ 
+   // Perform fills
++  // data가 준비된 MSHR, inflight_writes 중에서 MAX_FILL (bandwidth)만큼
++  // 선택하여 cache에 채워넣고 성공한 것은 queue에서 제거 ->cache, tlb 모두 해당
+   champsim::bandwidth fill_bw{MAX_FILL};
+   for (auto q : {std::ref(MSHR), std::ref(inflight_writes)}) {
++    // 2) 이번 사이클에 데이터가 준비된 항목만, 남은 fill 대역폭 한도 내에서
++    // 집어옴
+     auto [fill_begin, fill_end] = champsim::get_span_p(std::cbegin(q.get()), std::cend(q.get()), fill_bw,
+                                                        [time = current_time](const auto& x) { return x.data_promise.is_ready_at(time); });
++    // 3) 앞에서부터 handle_fill 성공하는 구간까지 채움(피해자
++    // 선택/쓰기백/블록기입 포함)
+     auto complete_end = std::find_if_not(fill_begin, fill_end, [this](const auto& x) { return this->handle_fill(x); });
+     fill_bw.consume(std::distance(fill_begin, complete_end));
+     q.get().erase(fill_begin, complete_end);
+   }
+ 
+   // Initiate tag checks
++  // 4) 태그체크 발행 가능량 계산: (동시 태그체크 한도 × 히트지연) - 현재
++  // 인플라이트 태그체크 수
+   const champsim::bandwidth::maximum_type bandwidth_from_tag_checks{champsim::to_underlying(MAX_TAG) * (long)(HIT_LATENCY / clock_period)
+                                                                     - (long)std::size(inflight_tag_check)};
+   champsim::bandwidth initiate_tag_bw{std::clamp(bandwidth_from_tag_checks, champsim::bandwidth::maximum_type{0}, MAX_TAG)};
+   auto can_translate = [avail = (std::size(translation_stash) < static_cast<std::size_t>(MSHR_SIZE))](const auto& entry) {
+     return avail || entry.is_translated;
+   };
++  // 5) 이전 사이클에 번역 미완료라서 stash에 있던 항목부터 소화(번역이 끝난
++  // 것만 사용)
++  //@Minchan: trace all load instructions
++  if (!warmup) {
++    for (const auto& entry : translation_stash) {
++      if (entry.type == access_type::LOAD && flag_issue_translation_trace) {
++        fmt::print("[CACHE_TRACE] before stash processing instr_id: {} "
++                   "is_translated: {} cycle: {} cache: {}\n",
++                   entry.instr_id, is_translated(entry), current_time.time_since_epoch() / clock_period, NAME);
++      }
++    }
++  }
+   auto stash_bandwidth_consumed =
+       champsim::transform_while_n(translation_stash, std::back_inserter(inflight_tag_check), initiate_tag_bw, is_translated, initiate_tag_check<false>());
+   initiate_tag_bw.consume(stash_bandwidth_consumed);
+   std::vector<long long> channels_bandwidth_consumed{};
+ 
++  // 6) 다수 상위 채널이 있을 때 라운드로빈 우선순위 회전(공평한 대역폭 분배)
+   if (std::size(upper_levels) > 1) {
+     std::rotate(upper_levels.begin(), upper_levels.begin() + 1, upper_levels.end());
+   }
+@@ -473,31 +936,88 @@ long CACHE::operate()
+ 
+   for (auto* ul : upper_levels) {
+     for (auto q : {std::ref(ul->WQ), std::ref(ul->RQ), std::ref(ul->PQ)}) {
+-      // this needs to be in this loop, we need to ensure that for cases where bandwidth doesn't divide nicely across upstreams,
+-      // we don't accidentally consume more bandwidth than expected
++      // this needs to be in this loop, we need to ensure that for cases where
++      // bandwidth doesn't divide nicely across upstreams, we don't accidentally
++      // consume more bandwidth than expected 7) 각 상위 채널별(WQ/RQ/PQ) 남은
++      // initiate_tag 대역폭을 균등하게 나눠 태그체크 엔트리를 생성
++      //@Minchan: trace all load instructions
++      if (!warmup) {
++        for (const auto& entry : q.get()) {
++          if (entry.type == access_type::LOAD && flag_issue_translation_trace) {
++            champsim::bandwidth per_upper_tag_bw_before{std::min(per_upper_bandwidth, champsim::bandwidth::maximum_type{initiate_tag_bw.amount_remaining()})};
++            fmt::print("[CACHE_TRACE] before transform_while_n from queue instr_id: "
++                       "{} cycle: {} cache: {} queue_size: {} stash_size: {} "
++                       "is_translated: {} "
++                       "can_translate: {} per_upper_tag_bw: {} "
++                       "initiate_tag_bw_remaining: {} address: {} v_address: {}\n",
++                       entry.instr_id, current_time.time_since_epoch() / clock_period, NAME, std::size(q.get()), std::size(translation_stash),
++                       entry.is_translated, can_translate(entry), per_upper_tag_bw_before.amount_remaining(), initiate_tag_bw.amount_remaining(),
++                       entry.address.to<uint64_t>(), entry.v_address.to<uint64_t>());
++          }
++        }
++      }
+       champsim::bandwidth per_upper_tag_bw{std::min(per_upper_bandwidth, champsim::bandwidth::maximum_type{initiate_tag_bw.amount_remaining()})};
+       auto bandwidth_consumed =
+           champsim::transform_while_n(q.get(), std::back_inserter(inflight_tag_check), per_upper_tag_bw, can_translate, initiate_tag_check<true>(ul));
++      //@Minchan: trace all load instructions
++      if (!warmup) {
++        for (const auto& entry : q.get()) {
++          if (entry.type == access_type::LOAD && flag_issue_translation_trace) {
++            fmt::print("[CACHE_TRACE] after transform_while_n still in queue "
++                       "instr_id: {} cycle: {} cache: {} queue_size: {} "
++                       "bandwidth_consumed: {} "
++                       "stash_size: {} is_translated: {} initiate_tag_bw_remaining: "
++                       "{} address: {} v_address: {}\n",
++                       entry.instr_id, current_time.time_since_epoch() / clock_period, NAME, std::size(q.get()), bandwidth_consumed,
++                       std::size(translation_stash), entry.is_translated, initiate_tag_bw.amount_remaining(), entry.address.to<uint64_t>(),
++                       entry.v_address.to<uint64_t>());
++          }
++        }
++      }
+       channels_bandwidth_consumed.push_back(bandwidth_consumed);
+       initiate_tag_bw.consume(bandwidth_consumed);
+     }
+   }
+ 
++  // 8) 내부 프리페치 큐도 동일하게 태그체크를 발행(이 레벨로 채울지 여부는 이후
++  // 로직에서 결정)
+   auto pq_bandwidth_consumed =
+       champsim::transform_while_n(internal_PQ, std::back_inserter(inflight_tag_check), initiate_tag_bw, can_translate, initiate_tag_check<false>());
+   initiate_tag_bw.consume(pq_bandwidth_consumed);
+ 
+   // Issue translations
++  // 9) 아직 번역이 안 된 태그체크 항목들에 대해 하위 번역기로 요청 발행
+   std::for_each(std::begin(inflight_tag_check), std::end(inflight_tag_check), [this](auto& x) { this->issue_translation(x); });
+   std::for_each(std::begin(translation_stash), std::end(translation_stash), [this](auto& x) { this->issue_translation(x); });
+ 
+-  // Find entries that would be ready except that they have not finished translation, move them to the stash
++  // Find entries that would be ready except that they have not finished
++  // translation, move them to the stash 10) 태그체크 준비는 되었지만 번역이
++  // 끝나지 않은 항목들을 stash로 이동(번역 완료 후 재시도)
++  //@Minchan: trace all load instructions
++  if (!warmup) {
++    for (const auto& entry : inflight_tag_check) {
++      if (entry.type == access_type::LOAD && flag_issue_translation_trace) {
++        fmt::print("[CACHE_TRACE] before stash check instr_id: {} is_ready: {} "
++                   "is_translated: {} cycle: {} cache: {}\n",
++                   entry.instr_id, is_ready(entry), is_translated(entry), current_time.time_since_epoch() / clock_period, NAME);
++      }
++    }
++  }
+   auto [last_not_missed, stash_end] = champsim::extract_if(std::begin(inflight_tag_check), std::end(inflight_tag_check), std::back_inserter(translation_stash),
+                                                            [is_ready, is_translated](const auto& x) { return is_ready(x) && !is_translated(x); });
++  //@Minchan: trace all load instructions
++  if (!warmup) {
++    for (const auto& entry : translation_stash) {
++      if (entry.type == access_type::LOAD && flag_issue_translation_trace) {
++        fmt::print("[CACHE_TRACE] moved to stash instr_id: {} cycle: {} cache: {}\n", entry.instr_id, current_time.time_since_epoch() / clock_period, NAME);
++      }
++    }
++  }
+   progress += std::distance(last_not_missed, std::end(inflight_tag_check));
+   inflight_tag_check.erase(last_not_missed, std::end(inflight_tag_check));
+ 
+   // Perform tag checks
++  // 11) 이번 사이클 태그체크 한도(MAX_TAG)만큼 준비된 항목을 집계
+   auto do_handle_miss = [this](const auto& pkt) {
+     if (pkt.type == access_type::WRITE && !this->match_offset_bits) {
+       return this->handle_write(pkt); // Treat writes (that is, writebacks) like fills
+@@ -508,20 +1028,26 @@ long CACHE::operate()
+   auto [tag_check_ready_begin, tag_check_ready_end] =
+       champsim::get_span_p(std::begin(inflight_tag_check), std::end(inflight_tag_check), tag_check_bw,
+                            [is_ready, is_translated](const auto& pkt) { return is_ready(pkt) && is_translated(pkt); });
++  // 12) HIT/MISS 분류 → HIT은 try_hit에서 응답/치환/프리페처 업데이트, MISS는
++  // handle_miss에서 MSHR/하위레벨로 포워딩
+   auto hits_end = std::stable_partition(tag_check_ready_begin, tag_check_ready_end, [this](const auto& pkt) { return this->try_hit(pkt); });
+   auto finish_tag_check_end = std::stable_partition(hits_end, tag_check_ready_end, do_handle_miss);
+   tag_check_bw.consume(std::distance(tag_check_ready_begin, finish_tag_check_end));
+   inflight_tag_check.erase(tag_check_ready_begin, finish_tag_check_end);
+ 
++  // 13) 프리페처 1사이클 동작
+   impl_prefetcher_cycle_operate();
+ 
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}] {} cycle completed: {} tags checked: {} remaining: {} stash consumed: {} remaining: {} channel consumed: {} pq consumed {} unused consume "
++    fmt::print("[{}] {} cycle completed: {} tags checked: {} remaining: {} "
++               "stash consumed: {} remaining: {} channel consumed: {} pq "
++               "consumed {} unused consume "
+                "bw {}\n",
+                NAME, __func__, current_time.time_since_epoch() / clock_period, tag_check_bw.amount_consumed(), std::size(inflight_tag_check),
+                stash_bandwidth_consumed, std::size(translation_stash), channels_bandwidth_consumed, pq_bandwidth_consumed, initiate_tag_bw.amount_remaining());
+   }
+ 
++  // 14) 이 사이클의 실질 처리량(채움/발행/체크)을 합산하여 반환
+   return progress + fill_bw.amount_consumed() + initiate_tag_bw.amount_consumed() + tag_check_bw.amount_consumed();
+ }
+ 
+@@ -538,18 +1064,29 @@ std::pair<It, It> get_span(It anchor, typename std::iterator_traits<It>::differe
+   return {std::move(begin), std::next(begin, num_way)};
+ }
+ 
++// HJ
++bool CACHE::probe_tag_hit_only(champsim::address addr) const
++{
++  auto [set_begin, set_end] = this->get_set_span(addr);
++  auto way = std::find_if(set_begin, set_end, [matcher = this->matches_address(addr)](const auto& x) { return x.valid && matcher(x); });
++  return way != set_end;
++}
++// HJ
++
+ auto CACHE::get_set_span(champsim::address address) -> std::pair<set_type::iterator, set_type::iterator>
+ {
+   const auto set_idx = get_set_index(address);
+   assert(set_idx < NUM_SET);
+-  return get_span(std::begin(block), static_cast<set_type::difference_type>(set_idx), NUM_WAY); // safe cast because of prior assert
++  return get_span(std::begin(block), static_cast<set_type::difference_type>(set_idx),
++                  NUM_WAY); // safe cast because of prior assert
+ }
+ 
+ auto CACHE::get_set_span(champsim::address address) const -> std::pair<set_type::const_iterator, set_type::const_iterator>
+ {
+   const auto set_idx = get_set_index(address);
+   assert(set_idx < NUM_SET);
+-  return get_span(std::cbegin(block), static_cast<set_type::difference_type>(set_idx), NUM_WAY); // safe cast because of prior assert
++  return get_span(std::cbegin(block), static_cast<set_type::difference_type>(set_idx),
++                  NUM_WAY); // safe cast because of prior assert
+ }
+ 
+ // LCOV_EXCL_START exclude deprecated function
+@@ -591,6 +1128,7 @@ bool CACHE::prefetch_line(champsim::address pf_addr, bool fill_this_level, uint3
+ 
+   internal_PQ.emplace_back(pf_packet, true, !fill_this_level);
+   ++sim_stats.pf_issued;
++  track_prefetch_issuance();
+ 
+   return true;
+ }
+@@ -615,7 +1153,10 @@ void CACHE::finish_packet(const response_type& packet)
+ 
+   // sanity check
+   if (mshr_entry == MSHR.end()) {
+-    fmt::print(stderr, "[{}_MSHR] {} cannot find a matching entry! address: {} v_address: {}\n", NAME, __func__, packet.address, packet.v_address);
++    fmt::print(stderr,
++               "[{}_MSHR] {} cannot find a matching entry! address: {} "
++               "v_address: {}\n",
++               NAME, __func__, packet.address, packet.v_address);
+     assert(0);
+   }
+ 
+@@ -623,8 +1164,10 @@ void CACHE::finish_packet(const response_type& packet)
+   mshr_type::returned_value finished_value{packet.data, packet.pf_metadata};
+   mshr_entry->data_promise = champsim::waitable{finished_value, current_time + (warmup ? champsim::chrono::clock::duration{} : FILL_LATENCY)};
+   if constexpr (champsim::debug_print) {
+-    fmt::print("[{}_MSHR] finish_packet instr_id: {} address: {} data: {} type: {} current: {}\n", this->NAME, mshr_entry->instr_id, mshr_entry->address,
+-               mshr_entry->data_promise->data, access_type_names.at(champsim::to_underlying(mshr_entry->type)), current_time.time_since_epoch() / clock_period);
++    fmt::print("[{}_MSHR] finish_packet instr_id: {} address: {} data: {} "
++               "type: {} current: {}\n",
++               this->NAME, mshr_entry->instr_id, mshr_entry->address, mshr_entry->data_promise->data,
++               access_type_names.at(champsim::to_underlying(mshr_entry->type)), current_time.time_since_epoch() / clock_period);
+   }
+ 
+   // Order this entry after previously-returned entries, but before non-returned
+@@ -634,17 +1177,46 @@ void CACHE::finish_packet(const response_type& packet)
+ 
+ void CACHE::finish_translation(const response_type& packet)
+ {
++  //@Minchan: trace all translations
++  if (packet.instr_depend_on_me.size() > 0 && !warmup && flag_issue_translation_trace) {
++    for (const auto& instr_id : packet.instr_depend_on_me) {
++      fmt::print("[CACHE_TRACE] finish_translation received instr_id: {} "
++                 "cycle: {} cache: {} v_address: {}\n",
++                 instr_id, current_time.time_since_epoch() / clock_period, NAME, packet.v_address.to<uint64_t>());
++    }
++  }
++
+   auto matches_vpage = [page_num = champsim::page_number{packet.v_address}](const auto& entry) {
+     return (champsim::page_number{entry.v_address} == page_num) && !entry.is_translated;
+   };
+-  auto mark_translated = [p_page = champsim::page_number{packet.data}, this](auto& entry) {
++  auto mark_translated = [p_page = champsim::page_number{packet.data}, this, &packet](auto& entry) {
+     [[maybe_unused]] auto old_address = entry.address;
+     entry.address = champsim::address{champsim::splice(p_page, champsim::page_offset{entry.v_address})}; // translated address
+-    entry.is_translated = true;                                                                          // This entry is now translated
++
++    //@Minchan: trace all translations
++    if (!warmup && flag_issue_translation_trace) {
++      fmt::print("[CACHE_TRACE] finish_translation marking translated "
++                 "instr_id: {} cycle: {} cache: {}\n",
++                 entry.instr_id, current_time.time_since_epoch() / clock_period, NAME);
++    }
++
++    //@Minchan
++    //  if(entry.instr && !warmup){
++    //    // if(!warmup)
++    //    //   fmt::print("cycles: {} instr_id: {} translation completed\n",
++    //    current_time.time_since_epoch() / clock_period,
++    //    entry.instr->instr_id); entry.instr->translated = true;
++    //  }
++
++    entry.is_translated = true; // This entry is now translated
++
++    // (removed) STLB miss logging here could be early; final level unknown yet
+ 
+     if constexpr (champsim::debug_print) {
+-      fmt::print("[{}_TRANSLATE] finish_translation old: {} paddr: {} vaddr: {} type: {} cycle: {}\n", this->NAME, old_address, entry.address, entry.v_address,
+-                 access_type_names.at(champsim::to_underlying(entry.type)), this->current_time.time_since_epoch() / this->clock_period);
++      fmt::print("[{}_TRANSLATE] finish_translation old: {} paddr: {} vaddr: "
++                 "{} type: {} cycle: {}\n",
++                 this->NAME, old_address, entry.address, entry.v_address, access_type_names.at(champsim::to_underlying(entry.type)),
++                 this->current_time.time_since_epoch() / this->clock_period);
+     }
+   };
+ 
+@@ -675,15 +1247,27 @@ void CACHE::issue_translation(tag_lookup_type& q_entry) const
+     fwd_pkt.data = q_entry.data;
+     fwd_pkt.instr_id = q_entry.instr_id;
+     fwd_pkt.ip = q_entry.ip;
++    //@Minchan
++    fwd_pkt.instr = q_entry.instr;
++    fwd_pkt.access_offset = (uint8_t)((q_entry.v_address.to<uint64_t>() % PAGE_SIZE) / BLOCK_SIZE);
++    //
+ 
+     fwd_pkt.instr_depend_on_me = q_entry.instr_depend_on_me;
+     fwd_pkt.is_translated = true;
+ 
++    //@Minchan: trace all translations
++    if (!warmup && flag_issue_translation_trace) {
++      fmt::print("[CACHE_TRACE] issue_translation sending to lower_translate "
++                 "instr_id: {} ptr: {} cycle: {} cache: {}\n",
++                 q_entry.instr_id, static_cast<void*>(q_entry.instr), current_time.time_since_epoch() / clock_period, NAME);
++    }
++
+     q_entry.translate_issued = lower_translate->add_rq(fwd_pkt);
+     if constexpr (champsim::debug_print) {
+       if (q_entry.translate_issued) {
+-        fmt::print("[TRANSLATE] do_issue_translation instr_id: {} paddr: {} vaddr: {} type: {}\n", q_entry.instr_id, q_entry.address, q_entry.v_address,
+-                   access_type_names.at(champsim::to_underlying(q_entry.type)));
++        fmt::print("[TRANSLATE] do_issue_translation instr_id: {} paddr: {} "
++                   "vaddr: {} type: {}\n",
++                   q_entry.instr_id, q_entry.address, q_entry.v_address, access_type_names.at(champsim::to_underlying(q_entry.type)));
+       }
+     }
+   }
+@@ -841,6 +1425,9 @@ void CACHE::initialize()
+ {
+   impl_prefetcher_initialize();
+   impl_initialize_replacement();
++  if (NAME == "cpu0_STLB") {
++    stlb_trace_open_once();
++  }
+ }
+ 
+ void CACHE::begin_phase()
+@@ -871,6 +1458,94 @@ void CACHE::end_phase(unsigned finished_cpu)
+   roi_stats.misses = sim_stats.misses;
+   roi_stats.mshr_merge = sim_stats.mshr_merge;
+   roi_stats.mshr_return = sim_stats.mshr_return;
++  // HJ: copy extended TLB/cache cross counters into ROI
++  // A) DTLB hit -> final level
++  roi_stats.dtlb_hit_L1I_hit = sim_stats.dtlb_hit_L1I_hit;
++  roi_stats.dtlb_hit_L1D_hit = sim_stats.dtlb_hit_L1D_hit;
++  roi_stats.dtlb_hit_L2C_hit = sim_stats.dtlb_hit_L2C_hit;
++  roi_stats.dtlb_hit_LLC_hit = sim_stats.dtlb_hit_LLC_hit;
++  roi_stats.dtlb_hit_MEM_hit = sim_stats.dtlb_hit_MEM_hit;
++
++  // B) ITLB hit -> final level
++  roi_stats.itlb_hit_L1I_hit = sim_stats.itlb_hit_L1I_hit;
++  roi_stats.itlb_hit_L1D_hit = sim_stats.itlb_hit_L1D_hit;
++  roi_stats.itlb_hit_L2C_hit = sim_stats.itlb_hit_L2C_hit;
++  roi_stats.itlb_hit_LLC_hit = sim_stats.itlb_hit_LLC_hit;
++  roi_stats.itlb_hit_MEM_hit = sim_stats.itlb_hit_MEM_hit;
++
++  // C) DTLB miss + STLB hit -> final level
++  roi_stats.dtlb_miss_stlb_hit_L1I_hit = sim_stats.dtlb_miss_stlb_hit_L1I_hit;
++  roi_stats.dtlb_miss_stlb_hit_L1D_hit = sim_stats.dtlb_miss_stlb_hit_L1D_hit;
++  roi_stats.dtlb_miss_stlb_hit_L2C_hit = sim_stats.dtlb_miss_stlb_hit_L2C_hit;
++  roi_stats.dtlb_miss_stlb_hit_LLC_hit = sim_stats.dtlb_miss_stlb_hit_LLC_hit;
++  roi_stats.dtlb_miss_stlb_hit_MEM_hit = sim_stats.dtlb_miss_stlb_hit_MEM_hit;
++
++  // D) ITLB miss + STLB hit -> final level
++  roi_stats.itlb_miss_stlb_hit_L1I_hit = sim_stats.itlb_miss_stlb_hit_L1I_hit;
++  roi_stats.itlb_miss_stlb_hit_L1D_hit = sim_stats.itlb_miss_stlb_hit_L1D_hit;
++  roi_stats.itlb_miss_stlb_hit_L2C_hit = sim_stats.itlb_miss_stlb_hit_L2C_hit;
++  roi_stats.itlb_miss_stlb_hit_LLC_hit = sim_stats.itlb_miss_stlb_hit_LLC_hit;
++  roi_stats.itlb_miss_stlb_hit_MEM_hit = sim_stats.itlb_miss_stlb_hit_MEM_hit;
++
++  // E) DTLB miss + STLB miss (resolved @ L1D/L2C/LLC/MEM) -> final level
++  roi_stats.dtlb_miss_stlb_miss_L1D_hit_L1I_hit = sim_stats.dtlb_miss_stlb_miss_L1D_hit_L1I_hit;
++  roi_stats.dtlb_miss_stlb_miss_L1D_hit_L1D_hit = sim_stats.dtlb_miss_stlb_miss_L1D_hit_L1D_hit;
++  roi_stats.dtlb_miss_stlb_miss_L1D_hit_L2C_hit = sim_stats.dtlb_miss_stlb_miss_L1D_hit_L2C_hit;
++  roi_stats.dtlb_miss_stlb_miss_L1D_hit_LLC_hit = sim_stats.dtlb_miss_stlb_miss_L1D_hit_LLC_hit;
++  roi_stats.dtlb_miss_stlb_miss_L1D_hit_MEM_hit = sim_stats.dtlb_miss_stlb_miss_L1D_hit_MEM_hit;
++
++  roi_stats.dtlb_miss_stlb_miss_L2C_hit_L1I_hit = sim_stats.dtlb_miss_stlb_miss_L2C_hit_L1I_hit;
++  roi_stats.dtlb_miss_stlb_miss_L2C_hit_L1D_hit = sim_stats.dtlb_miss_stlb_miss_L2C_hit_L1D_hit;
++  roi_stats.dtlb_miss_stlb_miss_L2C_hit_L2C_hit = sim_stats.dtlb_miss_stlb_miss_L2C_hit_L2C_hit;
++  roi_stats.dtlb_miss_stlb_miss_L2C_hit_LLC_hit = sim_stats.dtlb_miss_stlb_miss_L2C_hit_LLC_hit;
++  roi_stats.dtlb_miss_stlb_miss_L2C_hit_MEM_hit = sim_stats.dtlb_miss_stlb_miss_L2C_hit_MEM_hit;
++
++  roi_stats.dtlb_miss_stlb_miss_LLC_hit_L1I_hit = sim_stats.dtlb_miss_stlb_miss_LLC_hit_L1I_hit;
++  roi_stats.dtlb_miss_stlb_miss_LLC_hit_L1D_hit = sim_stats.dtlb_miss_stlb_miss_LLC_hit_L1D_hit;
++  roi_stats.dtlb_miss_stlb_miss_LLC_hit_L2C_hit = sim_stats.dtlb_miss_stlb_miss_LLC_hit_L2C_hit;
++  roi_stats.dtlb_miss_stlb_miss_LLC_hit_LLC_hit = sim_stats.dtlb_miss_stlb_miss_LLC_hit_LLC_hit;
++  roi_stats.dtlb_miss_stlb_miss_LLC_hit_MEM_hit = sim_stats.dtlb_miss_stlb_miss_LLC_hit_MEM_hit;
++
++  roi_stats.dtlb_miss_stlb_miss_MEM_hit_L1I_hit = sim_stats.dtlb_miss_stlb_miss_MEM_hit_L1I_hit;
++  roi_stats.dtlb_miss_stlb_miss_MEM_hit_L1D_hit = sim_stats.dtlb_miss_stlb_miss_MEM_hit_L1D_hit;
++  roi_stats.dtlb_miss_stlb_miss_MEM_hit_L2C_hit = sim_stats.dtlb_miss_stlb_miss_MEM_hit_L2C_hit;
++  roi_stats.dtlb_miss_stlb_miss_MEM_hit_LLC_hit = sim_stats.dtlb_miss_stlb_miss_MEM_hit_LLC_hit;
++  roi_stats.dtlb_miss_stlb_miss_MEM_hit_MEM_hit = sim_stats.dtlb_miss_stlb_miss_MEM_hit_MEM_hit;
++
++  // F) ITLB miss + STLB miss (resolved @ L1D/L2C/LLC/MEM) -> final level
++  roi_stats.itlb_miss_stlb_miss_L1D_hit_L1I_hit = sim_stats.itlb_miss_stlb_miss_L1D_hit_L1I_hit;
++  roi_stats.itlb_miss_stlb_miss_L1D_hit_L1D_hit = sim_stats.itlb_miss_stlb_miss_L1D_hit_L1D_hit;
++  roi_stats.itlb_miss_stlb_miss_L1D_hit_L2C_hit = sim_stats.itlb_miss_stlb_miss_L1D_hit_L2C_hit;
++  roi_stats.itlb_miss_stlb_miss_L1D_hit_LLC_hit = sim_stats.itlb_miss_stlb_miss_L1D_hit_LLC_hit;
++  roi_stats.itlb_miss_stlb_miss_L1D_hit_MEM_hit = sim_stats.itlb_miss_stlb_miss_L1D_hit_MEM_hit;
++
++  roi_stats.itlb_miss_stlb_miss_L2C_hit_L1I_hit = sim_stats.itlb_miss_stlb_miss_L2C_hit_L1I_hit;
++  roi_stats.itlb_miss_stlb_miss_L2C_hit_L1D_hit = sim_stats.itlb_miss_stlb_miss_L2C_hit_L1D_hit;
++  roi_stats.itlb_miss_stlb_miss_L2C_hit_L2C_hit = sim_stats.itlb_miss_stlb_miss_L2C_hit_L2C_hit;
++  roi_stats.itlb_miss_stlb_miss_L2C_hit_LLC_hit = sim_stats.itlb_miss_stlb_miss_L2C_hit_LLC_hit;
++  roi_stats.itlb_miss_stlb_miss_L2C_hit_MEM_hit = sim_stats.itlb_miss_stlb_miss_L2C_hit_MEM_hit;
++
++  roi_stats.itlb_miss_stlb_miss_LLC_hit_L1I_hit = sim_stats.itlb_miss_stlb_miss_LLC_hit_L1I_hit;
++  roi_stats.itlb_miss_stlb_miss_LLC_hit_L1D_hit = sim_stats.itlb_miss_stlb_miss_LLC_hit_L1D_hit;
++  roi_stats.itlb_miss_stlb_miss_LLC_hit_L2C_hit = sim_stats.itlb_miss_stlb_miss_LLC_hit_L2C_hit;
++  roi_stats.itlb_miss_stlb_miss_LLC_hit_LLC_hit = sim_stats.itlb_miss_stlb_miss_LLC_hit_LLC_hit;
++  roi_stats.itlb_miss_stlb_miss_LLC_hit_MEM_hit = sim_stats.itlb_miss_stlb_miss_LLC_hit_MEM_hit;
++
++  roi_stats.itlb_miss_stlb_miss_MEM_hit_L1I_hit = sim_stats.itlb_miss_stlb_miss_MEM_hit_L1I_hit;
++  roi_stats.itlb_miss_stlb_miss_MEM_hit_L1D_hit = sim_stats.itlb_miss_stlb_miss_MEM_hit_L1D_hit;
++  roi_stats.itlb_miss_stlb_miss_MEM_hit_L2C_hit = sim_stats.itlb_miss_stlb_miss_MEM_hit_L2C_hit;
++  roi_stats.itlb_miss_stlb_miss_MEM_hit_LLC_hit = sim_stats.itlb_miss_stlb_miss_MEM_hit_LLC_hit;
++  roi_stats.itlb_miss_stlb_miss_MEM_hit_MEM_hit = sim_stats.itlb_miss_stlb_miss_MEM_hit_MEM_hit;
++
++  // inwook: L1I Demand Access stats copy
++  roi_stats.fdip_l1i_hit = sim_stats.fdip_l1i_hit;
++  roi_stats.fdip_l1i_hit_non_pf = sim_stats.fdip_l1i_hit_non_pf;
++  roi_stats.fdip_l1i_mshr_merge = sim_stats.fdip_l1i_mshr_merge;
++  roi_stats.fdip_l1i_mshr_merge_non_pf = sim_stats.fdip_l1i_mshr_merge_non_pf;
++  roi_stats.fdip_l1i_miss = sim_stats.fdip_l1i_miss;
++  roi_stats.fdip_l1i_total_access = sim_stats.fdip_l1i_total_access;
++
++  // HJ
+ 
+   roi_stats.pf_requested = sim_stats.pf_requested;
+   roi_stats.pf_issued = sim_stats.pf_issued;
+@@ -895,6 +1570,9 @@ void CACHE::end_phase(unsigned finished_cpu)
+     ul->roi_stats.WQ_TO_CACHE = ul->sim_stats.WQ_TO_CACHE;
+     ul->roi_stats.WQ_FORWARD = ul->sim_stats.WQ_FORWARD;
+   }
++  if (NAME == "cpu0_STLB") {
++    stlb_trace_close();
++  }
+ }
+ 
+ template <typename T>
+@@ -903,6 +1581,47 @@ bool CACHE::should_activate_prefetcher(const T& pkt) const
+   return !pkt.prefetch_from_this && std::count(std::begin(pref_activate_mask), std::end(pref_activate_mask), pkt.type) > 0;
+ }
+ 
++// inwook: Simplified to only track issuance. Reset is done by CPU via
++// get_and_reset_prefetch_stats.
++void CACHE::track_prefetch_issuance() { pf_interval_issued++; }
++
++void CACHE::track_utility_and_timeliness(bool is_useful, bool is_timely)
++{
++  if (is_useful) {
++    pf_interval_useful++;
++    if (is_timely) {
++      pf_interval_timely++;
++    }
++  }
++}
++// inwook: New function to calculate stats on demand and reset counters
++std::pair<double, double> CACHE::get_and_reset_prefetch_stats()
++{
++  double utility = 0.0;
++  double timeliness = 0.0;
++
++  if (pf_interval_issued > 0) {
++    utility = (double)pf_interval_useful / (double)pf_interval_issued;
++  }
++
++  if (pf_interval_useful > 0) {
++    timeliness = (double)pf_interval_timely / (double)pf_interval_useful;
++  }
++
++  // Reset counters
++  pf_interval_issued = 0;
++  pf_interval_useful = 0;
++  pf_interval_timely = 0;
++
++  // Increment version to signal update (though with explicit call it's less
++  // critical, good for consistency)
++  pf_stats_version++;
++
++  return {utility, timeliness};
++}
++
++// Timeliness integrated into update_prefetch_stats
++
+ // LCOV_EXCL_START Exclude the following function from LCOV
+ void CACHE::print_deadlock()
+ {
+@@ -912,7 +1631,8 @@ void CACHE::print_deadlock()
+                       entry.data_promise.is_ready_at(time)};
+   };
+ 
+-  std::string_view tag_check_write{"instr_id: {} address: {} v_addr: {} is_translated: {} translate_issued: {} event_cycle: {}"};
++  std::string_view tag_check_write{"instr_id: {} address: {} v_addr: {} is_translated: {} translate_issued: "
++                                   "{} event_cycle: {}"};
+   auto tag_check_pack = [period = clock_period](const auto& entry) {
+     return std::tuple{entry.instr_id,      entry.address,          entry.v_address,
+                       entry.is_translated, entry.translate_issued, entry.event_cycle.time_since_epoch() / period};
+@@ -933,4 +1653,4 @@ void CACHE::print_deadlock()
+     champsim::range_print_deadlock(ul->PQ, NAME + "_PQ", q_writer, q_entry_pack);
+   }
+ }
+-// LCOV_EXCL_STOP
++// LCOV_EXCL_STOP
+\ No newline at end of file
+diff --git a/src/cache_stats.cc b/src/cache_stats.cc
+index 0c47493..33b2164 100644
+--- a/src/cache_stats.cc
++++ b/src/cache_stats.cc
+@@ -9,6 +9,79 @@ cache_stats operator-(cache_stats lhs, cache_stats rhs)
+   result.pf_useless = lhs.pf_useless - rhs.pf_useless;
+   result.pf_fill = lhs.pf_fill - rhs.pf_fill;
+ 
++  // HJ: extended TLB/cache cross counters (lhs - rhs)
++  // A) DTLB miss + STLB hit -> final level
++  result.dtlb_miss_stlb_hit_L1I_hit = lhs.dtlb_miss_stlb_hit_L1I_hit - rhs.dtlb_miss_stlb_hit_L1I_hit;
++  result.dtlb_miss_stlb_hit_L1D_hit = lhs.dtlb_miss_stlb_hit_L1D_hit - rhs.dtlb_miss_stlb_hit_L1D_hit;
++  result.dtlb_miss_stlb_hit_L2C_hit = lhs.dtlb_miss_stlb_hit_L2C_hit - rhs.dtlb_miss_stlb_hit_L2C_hit;
++  result.dtlb_miss_stlb_hit_LLC_hit = lhs.dtlb_miss_stlb_hit_LLC_hit - rhs.dtlb_miss_stlb_hit_LLC_hit;
++  result.dtlb_miss_stlb_hit_MEM_hit = lhs.dtlb_miss_stlb_hit_MEM_hit - rhs.dtlb_miss_stlb_hit_MEM_hit;
++
++  // B) ITLB miss + STLB hit -> final level
++  result.itlb_miss_stlb_hit_L1I_hit = lhs.itlb_miss_stlb_hit_L1I_hit - rhs.itlb_miss_stlb_hit_L1I_hit;
++  result.itlb_miss_stlb_hit_L1D_hit = lhs.itlb_miss_stlb_hit_L1D_hit - rhs.itlb_miss_stlb_hit_L1D_hit;
++  result.itlb_miss_stlb_hit_L2C_hit = lhs.itlb_miss_stlb_hit_L2C_hit - rhs.itlb_miss_stlb_hit_L2C_hit;
++  result.itlb_miss_stlb_hit_LLC_hit = lhs.itlb_miss_stlb_hit_LLC_hit - rhs.itlb_miss_stlb_hit_LLC_hit;
++  result.itlb_miss_stlb_hit_MEM_hit = lhs.itlb_miss_stlb_hit_MEM_hit - rhs.itlb_miss_stlb_hit_MEM_hit;
++
++  // C) DTLB miss + STLB miss (resolved @ L1D/L2C/LLC/MEM) -> final level
++  result.dtlb_miss_stlb_miss_L1D_hit_L1I_hit = lhs.dtlb_miss_stlb_miss_L1D_hit_L1I_hit - rhs.dtlb_miss_stlb_miss_L1D_hit_L1I_hit;
++  result.dtlb_miss_stlb_miss_L1D_hit_L1D_hit = lhs.dtlb_miss_stlb_miss_L1D_hit_L1D_hit - rhs.dtlb_miss_stlb_miss_L1D_hit_L1D_hit;
++  result.dtlb_miss_stlb_miss_L1D_hit_L2C_hit = lhs.dtlb_miss_stlb_miss_L1D_hit_L2C_hit - rhs.dtlb_miss_stlb_miss_L1D_hit_L2C_hit;
++  result.dtlb_miss_stlb_miss_L1D_hit_LLC_hit = lhs.dtlb_miss_stlb_miss_L1D_hit_LLC_hit - rhs.dtlb_miss_stlb_miss_L1D_hit_LLC_hit;
++  result.dtlb_miss_stlb_miss_L1D_hit_MEM_hit = lhs.dtlb_miss_stlb_miss_L1D_hit_MEM_hit - rhs.dtlb_miss_stlb_miss_L1D_hit_MEM_hit;
++
++  result.dtlb_miss_stlb_miss_L2C_hit_L1I_hit = lhs.dtlb_miss_stlb_miss_L2C_hit_L1I_hit - rhs.dtlb_miss_stlb_miss_L2C_hit_L1I_hit;
++  result.dtlb_miss_stlb_miss_L2C_hit_L1D_hit = lhs.dtlb_miss_stlb_miss_L2C_hit_L1D_hit - rhs.dtlb_miss_stlb_miss_L2C_hit_L1D_hit;
++  result.dtlb_miss_stlb_miss_L2C_hit_L2C_hit = lhs.dtlb_miss_stlb_miss_L2C_hit_L2C_hit - rhs.dtlb_miss_stlb_miss_L2C_hit_L2C_hit;
++  result.dtlb_miss_stlb_miss_L2C_hit_LLC_hit = lhs.dtlb_miss_stlb_miss_L2C_hit_LLC_hit - rhs.dtlb_miss_stlb_miss_L2C_hit_LLC_hit;
++  result.dtlb_miss_stlb_miss_L2C_hit_MEM_hit = lhs.dtlb_miss_stlb_miss_L2C_hit_MEM_hit - rhs.dtlb_miss_stlb_miss_L2C_hit_MEM_hit;
++
++  result.dtlb_miss_stlb_miss_LLC_hit_L1I_hit = lhs.dtlb_miss_stlb_miss_LLC_hit_L1I_hit - rhs.dtlb_miss_stlb_miss_LLC_hit_L1I_hit;
++  result.dtlb_miss_stlb_miss_LLC_hit_L1D_hit = lhs.dtlb_miss_stlb_miss_LLC_hit_L1D_hit - rhs.dtlb_miss_stlb_miss_LLC_hit_L1D_hit;
++  result.dtlb_miss_stlb_miss_LLC_hit_L2C_hit = lhs.dtlb_miss_stlb_miss_LLC_hit_L2C_hit - rhs.dtlb_miss_stlb_miss_LLC_hit_L2C_hit;
++  result.dtlb_miss_stlb_miss_LLC_hit_LLC_hit = lhs.dtlb_miss_stlb_miss_LLC_hit_LLC_hit - rhs.dtlb_miss_stlb_miss_LLC_hit_LLC_hit;
++  result.dtlb_miss_stlb_miss_LLC_hit_MEM_hit = lhs.dtlb_miss_stlb_miss_LLC_hit_MEM_hit - rhs.dtlb_miss_stlb_miss_LLC_hit_MEM_hit;
++
++  result.dtlb_miss_stlb_miss_MEM_hit_L1I_hit = lhs.dtlb_miss_stlb_miss_MEM_hit_L1I_hit - rhs.dtlb_miss_stlb_miss_MEM_hit_L1I_hit;
++  result.dtlb_miss_stlb_miss_MEM_hit_L1D_hit = lhs.dtlb_miss_stlb_miss_MEM_hit_L1D_hit - rhs.dtlb_miss_stlb_miss_MEM_hit_L1D_hit;
++  result.dtlb_miss_stlb_miss_MEM_hit_L2C_hit = lhs.dtlb_miss_stlb_miss_MEM_hit_L2C_hit - rhs.dtlb_miss_stlb_miss_MEM_hit_L2C_hit;
++  result.dtlb_miss_stlb_miss_MEM_hit_LLC_hit = lhs.dtlb_miss_stlb_miss_MEM_hit_LLC_hit - rhs.dtlb_miss_stlb_miss_MEM_hit_LLC_hit;
++  result.dtlb_miss_stlb_miss_MEM_hit_MEM_hit = lhs.dtlb_miss_stlb_miss_MEM_hit_MEM_hit - rhs.dtlb_miss_stlb_miss_MEM_hit_MEM_hit;
++
++  // D) ITLB miss + STLB miss (resolved @ L1D/L2C/LLC/MEM) -> final level
++  result.itlb_miss_stlb_miss_L1D_hit_L1I_hit = lhs.itlb_miss_stlb_miss_L1D_hit_L1I_hit - rhs.itlb_miss_stlb_miss_L1D_hit_L1I_hit;
++  result.itlb_miss_stlb_miss_L1D_hit_L1D_hit = lhs.itlb_miss_stlb_miss_L1D_hit_L1D_hit - rhs.itlb_miss_stlb_miss_L1D_hit_L1D_hit;
++  result.itlb_miss_stlb_miss_L1D_hit_L2C_hit = lhs.itlb_miss_stlb_miss_L1D_hit_L2C_hit - rhs.itlb_miss_stlb_miss_L1D_hit_L2C_hit;
++  result.itlb_miss_stlb_miss_L1D_hit_LLC_hit = lhs.itlb_miss_stlb_miss_L1D_hit_LLC_hit - rhs.itlb_miss_stlb_miss_L1D_hit_LLC_hit;
++  result.itlb_miss_stlb_miss_L1D_hit_MEM_hit = lhs.itlb_miss_stlb_miss_L1D_hit_MEM_hit - rhs.itlb_miss_stlb_miss_L1D_hit_MEM_hit;
++
++  result.itlb_miss_stlb_miss_L2C_hit_L1I_hit = lhs.itlb_miss_stlb_miss_L2C_hit_L1I_hit - rhs.itlb_miss_stlb_miss_L2C_hit_L1I_hit;
++  result.itlb_miss_stlb_miss_L2C_hit_L1D_hit = lhs.itlb_miss_stlb_miss_L2C_hit_L1D_hit - rhs.itlb_miss_stlb_miss_L2C_hit_L1D_hit;
++  result.itlb_miss_stlb_miss_L2C_hit_L2C_hit = lhs.itlb_miss_stlb_miss_L2C_hit_L2C_hit - rhs.itlb_miss_stlb_miss_L2C_hit_L2C_hit;
++  result.itlb_miss_stlb_miss_L2C_hit_LLC_hit = lhs.itlb_miss_stlb_miss_L2C_hit_LLC_hit - rhs.itlb_miss_stlb_miss_L2C_hit_LLC_hit;
++  result.itlb_miss_stlb_miss_L2C_hit_MEM_hit = lhs.itlb_miss_stlb_miss_L2C_hit_MEM_hit - rhs.itlb_miss_stlb_miss_L2C_hit_MEM_hit;
++
++  result.itlb_miss_stlb_miss_LLC_hit_L1I_hit = lhs.itlb_miss_stlb_miss_LLC_hit_L1I_hit - rhs.itlb_miss_stlb_miss_LLC_hit_L1I_hit;
++  result.itlb_miss_stlb_miss_LLC_hit_L1D_hit = lhs.itlb_miss_stlb_miss_LLC_hit_L1D_hit - rhs.itlb_miss_stlb_miss_LLC_hit_L1D_hit;
++  result.itlb_miss_stlb_miss_LLC_hit_L2C_hit = lhs.itlb_miss_stlb_miss_LLC_hit_L2C_hit - rhs.itlb_miss_stlb_miss_LLC_hit_L2C_hit;
++  result.itlb_miss_stlb_miss_LLC_hit_LLC_hit = lhs.itlb_miss_stlb_miss_LLC_hit_LLC_hit - rhs.itlb_miss_stlb_miss_LLC_hit_LLC_hit;
++  result.itlb_miss_stlb_miss_LLC_hit_MEM_hit = lhs.itlb_miss_stlb_miss_LLC_hit_MEM_hit - rhs.itlb_miss_stlb_miss_LLC_hit_MEM_hit;
++
++  result.itlb_miss_stlb_miss_MEM_hit_L1I_hit = lhs.itlb_miss_stlb_miss_MEM_hit_L1I_hit - rhs.itlb_miss_stlb_miss_MEM_hit_L1I_hit;
++  result.itlb_miss_stlb_miss_MEM_hit_L1D_hit = lhs.itlb_miss_stlb_miss_MEM_hit_L1D_hit - rhs.itlb_miss_stlb_miss_MEM_hit_L1D_hit;
++  result.itlb_miss_stlb_miss_MEM_hit_L2C_hit = lhs.itlb_miss_stlb_miss_MEM_hit_L2C_hit - rhs.itlb_miss_stlb_miss_MEM_hit_L2C_hit;
++  result.itlb_miss_stlb_miss_MEM_hit_LLC_hit = lhs.itlb_miss_stlb_miss_MEM_hit_LLC_hit - rhs.itlb_miss_stlb_miss_MEM_hit_LLC_hit;
++  result.itlb_miss_stlb_miss_MEM_hit_MEM_hit = lhs.itlb_miss_stlb_miss_MEM_hit_MEM_hit - rhs.itlb_miss_stlb_miss_MEM_hit_MEM_hit;
++  // HJ
++
++  result.fdip_l1i_hit = lhs.fdip_l1i_hit - rhs.fdip_l1i_hit;
++  result.fdip_l1i_hit_non_pf = lhs.fdip_l1i_hit_non_pf - rhs.fdip_l1i_hit_non_pf;
++  result.fdip_l1i_mshr_merge = lhs.fdip_l1i_mshr_merge - rhs.fdip_l1i_mshr_merge;
++  result.fdip_l1i_mshr_merge_non_pf = lhs.fdip_l1i_mshr_merge_non_pf - rhs.fdip_l1i_mshr_merge_non_pf;
++  result.fdip_l1i_miss = lhs.fdip_l1i_miss - rhs.fdip_l1i_miss;
++  result.fdip_l1i_total_access = lhs.fdip_l1i_total_access - rhs.fdip_l1i_total_access;
++
+   result.hits = lhs.hits - rhs.hits;
+   result.misses = lhs.misses - rhs.misses;
+ 
+diff --git a/src/core_stats.cc b/src/core_stats.cc
+index 7525a82..59cc0f8 100644
+--- a/src/core_stats.cc
++++ b/src/core_stats.cc
+@@ -11,5 +11,14 @@ cpu_stats operator-(cpu_stats lhs, cpu_stats rhs)
+   lhs.total_branch_types -= rhs.total_branch_types;
+   lhs.branch_type_misses -= rhs.branch_type_misses;
+ 
++  //@Minchan
++  for (int i=0; i<StallType::NUM_STALL_TYPE; i++){
++    lhs.stall_cycles[i] -= rhs.stall_cycles[i];
++  }
++  for (int i=0; i<ROBStallType::NUM_ROB_STALL_TYPE; i++){
++    lhs.rob_stall_cycles[i] -= rhs.rob_stall_cycles[i];
++    lhs.rob_stall_counts[i] -= rhs.rob_stall_counts[i];
++  }
++
+   return lhs;
+ }
+diff --git a/src/generated_environment.cc b/src/generated_environment.cc
+index b41a740..b00c554 100644
+--- a/src/generated_environment.cc
++++ b/src/generated_environment.cc
+@@ -19,7 +19,11 @@ template <typename R, typename... PTWs>
+ auto build(PTWs... builders)
+ {
+   std::forward_list<R> retval{};
+-  (..., retval.emplace_front(builders));
++  //(..., retval.emplace_front(builders));
++  // inwook start
++  auto it = retval.before_begin();
++  ((it = retval.emplace_after(it, builders)), ...);
++  // inwook end
+   return retval;
+ }
+ } // namespace champsim::configured
+diff --git a/src/json_printer.cc b/src/json_printer.cc
+index 389df34..34a6afc 100644
+--- a/src/json_printer.cc
++++ b/src/json_printer.cc
+@@ -52,6 +52,75 @@ void to_json(nlohmann::json& j, const CACHE::stats_type& stats)
+   statsmap.emplace("useful prefetch", stats.pf_useful);
+   statsmap.emplace("useless prefetch", stats.pf_useless);
+ 
++
++
++  // HJ: extended TLB/cache cross counters
++  // A) dtlb miss + stlb hit -> final level
++  statsmap.emplace("dtlb miss + stlb hit -> l1i hit", stats.dtlb_miss_stlb_hit_L1I_hit);
++  statsmap.emplace("dtlb miss + stlb hit -> l1d hit", stats.dtlb_miss_stlb_hit_L1D_hit);
++  statsmap.emplace("dtlb miss + stlb hit -> l2c hit", stats.dtlb_miss_stlb_hit_L2C_hit);
++  statsmap.emplace("dtlb miss + stlb hit -> llc hit", stats.dtlb_miss_stlb_hit_LLC_hit);
++  statsmap.emplace("dtlb miss + stlb hit -> mem hit", stats.dtlb_miss_stlb_hit_MEM_hit);
++
++  // B) itlb miss + stlb hit -> final level
++  statsmap.emplace("itlb miss + stlb hit -> l1i hit", stats.itlb_miss_stlb_hit_L1I_hit);
++  statsmap.emplace("itlb miss + stlb hit -> l1d hit", stats.itlb_miss_stlb_hit_L1D_hit);
++  statsmap.emplace("itlb miss + stlb hit -> l2c hit", stats.itlb_miss_stlb_hit_L2C_hit);
++  statsmap.emplace("itlb miss + stlb hit -> llc hit", stats.itlb_miss_stlb_hit_LLC_hit);
++  statsmap.emplace("itlb miss + stlb hit -> mem hit", stats.itlb_miss_stlb_hit_MEM_hit);
++
++  // C) dtlb miss + stlb miss (resolved @ X) -> final level
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l1d) -> l1i hit", stats.dtlb_miss_stlb_miss_L1D_hit_L1I_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l1d) -> l1d hit", stats.dtlb_miss_stlb_miss_L1D_hit_L1D_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l1d) -> l2c hit", stats.dtlb_miss_stlb_miss_L1D_hit_L2C_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l1d) -> llc hit", stats.dtlb_miss_stlb_miss_L1D_hit_LLC_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l1d) -> mem hit", stats.dtlb_miss_stlb_miss_L1D_hit_MEM_hit);
++
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l2c) -> l1i hit", stats.dtlb_miss_stlb_miss_L2C_hit_L1I_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l2c) -> l1d hit", stats.dtlb_miss_stlb_miss_L2C_hit_L1D_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l2c) -> l2c hit", stats.dtlb_miss_stlb_miss_L2C_hit_L2C_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l2c) -> llc hit", stats.dtlb_miss_stlb_miss_L2C_hit_LLC_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ l2c) -> mem hit", stats.dtlb_miss_stlb_miss_L2C_hit_MEM_hit);
++
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ llc) -> l1i hit", stats.dtlb_miss_stlb_miss_LLC_hit_L1I_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ llc) -> l1d hit", stats.dtlb_miss_stlb_miss_LLC_hit_L1D_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ llc) -> l2c hit", stats.dtlb_miss_stlb_miss_LLC_hit_L2C_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ llc) -> llc hit", stats.dtlb_miss_stlb_miss_LLC_hit_LLC_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ llc) -> mem hit", stats.dtlb_miss_stlb_miss_LLC_hit_MEM_hit);
++
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ mem) -> l1i hit", stats.dtlb_miss_stlb_miss_MEM_hit_L1I_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ mem) -> l1d hit", stats.dtlb_miss_stlb_miss_MEM_hit_L1D_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ mem) -> l2c hit", stats.dtlb_miss_stlb_miss_MEM_hit_L2C_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ mem) -> llc hit", stats.dtlb_miss_stlb_miss_MEM_hit_LLC_hit);
++  statsmap.emplace("dtlb miss + stlb miss (resolved @ mem) -> mem hit", stats.dtlb_miss_stlb_miss_MEM_hit_MEM_hit);
++
++  // D) itlb miss + stlb miss (resolved @ X) -> final level
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l1d) -> l1i hit", stats.itlb_miss_stlb_miss_L1D_hit_L1I_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l1d) -> l1d hit", stats.itlb_miss_stlb_miss_L1D_hit_L1D_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l1d) -> l2c hit", stats.itlb_miss_stlb_miss_L1D_hit_L2C_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l1d) -> llc hit", stats.itlb_miss_stlb_miss_L1D_hit_LLC_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l1d) -> mem hit", stats.itlb_miss_stlb_miss_L1D_hit_MEM_hit);
++
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l2c) -> l1i hit", stats.itlb_miss_stlb_miss_L2C_hit_L1I_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l2c) -> l1d hit", stats.itlb_miss_stlb_miss_L2C_hit_L1D_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l2c) -> l2c hit", stats.itlb_miss_stlb_miss_L2C_hit_L2C_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l2c) -> llc hit", stats.itlb_miss_stlb_miss_L2C_hit_LLC_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ l2c) -> mem hit", stats.itlb_miss_stlb_miss_L2C_hit_MEM_hit);
++
++  statsmap.emplace("itlb miss + stlb miss (resolved @ llc) -> l1i hit", stats.itlb_miss_stlb_miss_LLC_hit_L1I_hit); 
++  statsmap.emplace("itlb miss + stlb miss (resolved @ llc) -> l1d hit", stats.itlb_miss_stlb_miss_LLC_hit_L1D_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ llc) -> l2c hit", stats.itlb_miss_stlb_miss_LLC_hit_L2C_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ llc) -> llc hit", stats.itlb_miss_stlb_miss_LLC_hit_LLC_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ llc) -> mem hit", stats.itlb_miss_stlb_miss_LLC_hit_MEM_hit);
++
++  statsmap.emplace("itlb miss + stlb miss (resolved @ mem) -> l1i hit", stats.itlb_miss_stlb_miss_MEM_hit_L1I_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ mem) -> l1d hit", stats.itlb_miss_stlb_miss_MEM_hit_L1D_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ mem) -> l2c hit", stats.itlb_miss_stlb_miss_MEM_hit_L2C_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ mem) -> llc hit", stats.itlb_miss_stlb_miss_MEM_hit_LLC_hit);
++  statsmap.emplace("itlb miss + stlb miss (resolved @ mem) -> mem hit", stats.itlb_miss_stlb_miss_MEM_hit_MEM_hit);
++  //HJ
++
++
+   uint64_t total_downstream_demands = stats.mshr_return.total();
+   for (std::size_t cpu = 0; cpu < NUM_CPUS; ++cpu)
+     total_downstream_demands -= stats.mshr_return.value_or(std::pair{access_type::PREFETCH, cpu}, mshr_return_value_type{});
+diff --git a/src/main.cc b/src/main.cc
+index 48a5eee..7b14222 100644
+--- a/src/main.cc
++++ b/src/main.cc
+@@ -40,6 +40,9 @@ namespace champsim
+ std::vector<phase_stats> main(environment& env, std::vector<phase_info>& phases, std::vector<tracereader>& traces);
+ }
+ 
++extern uint32_t FTQ_SIZE;
++
++
+ #ifndef CHAMPSIM_TEST_BUILD
+ using configured_environment = champsim::configured::generated_environment<CHAMPSIM_BUILD>;
+ 
+@@ -83,6 +86,8 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
+   auto* json_option =
+       app.add_option("--json", json_file_name, "The name of the file to receive JSON output. If no name is specified, stdout will be used")->expected(0, 1);
+ 
++  app.add_option("--ftq_size", FTQ_SIZE, "Set the FTQ size");
++
+   app.add_option("traces", trace_names, "The paths to the traces")->required()->expected(NUM_CPUS)->check(CLI::ExistingFile);
+ 
+   CLI11_PARSE(app, argc, argv);
+diff --git a/src/ooo_cpu.cc b/src/ooo_cpu.cc
+index add01bf..e925abf 100644
+--- a/src/ooo_cpu.cc
++++ b/src/ooo_cpu.cc
+@@ -31,8 +31,15 @@
+ #include "util/span.h"
+ 
+ std::chrono::seconds elapsed_time();
+-
++bool flag_cpu_trace = false;
+ constexpr long long STAT_PRINTING_PERIOD = 10000000;
++// inwook start
++constexpr bool ENABLE_FDIP = false; // Toggle FDIP prefetching
++constexpr bool PERFECT_BP = false; // Toggle Perfect Branch Prediction
++// inwook end UFTQ prefetching
++uint32_t FTQ_SIZE = 32;
++#define FQ_OFFSET 6
++// inwook end
+ 
+ long O3_CPU::operate()
+ {
+@@ -45,10 +52,13 @@ long O3_CPU::operate()
+   progress += operate_lsq();                   // execute memory transactions
+ 
+   progress += dispatch_instruction(); // dispatch
+-  progress += decode_instruction();   // decode
++  progress += decode_instruction();   // decodef
+   progress += promote_to_decode();
+ 
+-  progress += fetch_instruction(); // fetch
++  predict_future_blocks();         // inwook: Fill FTQ independently (Decoupled)
++  process_ftq();                   // inwook: Issue FTQ prefetches
++  progress += fetch_instruction(); // fetch       // inwook: Fill FTQ
++
+   progress += check_dib();
+   initialize_instruction();
+ 
+@@ -61,8 +71,9 @@ long O3_CPU::operate()
+     auto phase_instr{std::ceil(num_retired - begin_phase_instr)};
+     auto phase_cycle{double_duration{current_time - begin_phase_time} / clock_period};
+ 
+-    fmt::print("Heartbeat CPU {} instructions: {} cycles: {} heartbeat IPC: {:.4g} cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec})\n", cpu,
+-               num_retired, current_time.time_since_epoch() / clock_period, heartbeat_instr / heartbeat_cycle, phase_instr / phase_cycle, elapsed_time());
++    fmt::print("Heartbeat CPU {} instructions: {} cycles: {} heartbeat IPC: {:.4g} "
++               "cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec})\n",
++               cpu, num_retired, current_time.time_since_epoch() / clock_period, heartbeat_instr / heartbeat_cycle, phase_instr / phase_cycle, elapsed_time());
+ 
+     last_heartbeat_instr = num_retired;
+     last_heartbeat_time = current_time;
+@@ -112,6 +123,7 @@ void O3_CPU::initialize_instruction()
+ 
+   bool stop_fetch = false;
+   while (current_time >= fetch_resume_time && instrs_to_read_this_cycle.has_remaining() && !stop_fetch && !std::empty(input_queue)) {
++
+     instrs_to_read_this_cycle.consume();
+ 
+     stop_fetch = do_init_instruction(input_queue.front());
+@@ -128,12 +140,15 @@ namespace
+ {
+ void do_stack_pointer_folding(ooo_model_instr& arch_instr)
+ {
+-  // The exact, true value of the stack pointer for any given instruction can usually be determined immediately after the instruction is decoded without
++  // The exact, true value of the stack pointer for any given instruction can
++  // usually be determined immediately after the instruction is decoded without
+   // waiting for the stack pointer's dependency chain to be resolved.
+   bool writes_sp = (std::count(std::begin(arch_instr.destination_registers), std::end(arch_instr.destination_registers), champsim::REG_STACK_POINTER) > 0);
+   if (writes_sp) {
+-    // Avoid creating register dependencies on the stack pointer for calls, returns, pushes, and pops, but not for variable-sized changes in the
+-    // stack pointer position. reads_other indicates that the stack pointer is being changed by a variable amount, which can't be determined before
++    // Avoid creating register dependencies on the stack pointer for calls,
++    // returns, pushes, and pops, but not for variable-sized changes in the
++    // stack pointer position. reads_other indicates that the stack pointer is
++    // being changed by a variable amount, which can't be determined before
+     // execution.
+     bool reads_other =
+         (std::count_if(std::begin(arch_instr.source_registers), std::end(arch_instr.source_registers),
+@@ -151,10 +166,20 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
+ {
+   bool stop_fetch = false;
+ 
+-  // handle branch prediction for all instructions as at this point we do not know if the instruction is a branch
++  // handle branch prediction for all instructions as at this point we do not
++  // know if the instruction is a branch
+   sim_stats.total_branch_types.increment(arch_instr.branch);
+   auto [predicted_branch_target, always_taken] = impl_btb_prediction(arch_instr.ip, arch_instr.branch);
+   arch_instr.branch_prediction = impl_predict_branch(arch_instr.ip, predicted_branch_target, always_taken, arch_instr.branch) || always_taken;
++
++  // inwook:
++  //   Force Perfect Branch Prediction arch_instr.branch_prediction = arch_instr.branch_taken;
++  if (PERFECT_BP) {
++    arch_instr.branch_prediction = arch_instr.branch_taken;
++    if (arch_instr.branch_taken) {
++      predicted_branch_target = arch_instr.branch_target;
++    }
++  }
+   if (!arch_instr.branch_prediction) {
+     predicted_branch_target = champsim::address{};
+   }
+@@ -169,7 +194,8 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
+ 
+     if (predicted_branch_target != arch_instr.branch_target
+         || (((arch_instr.branch == BRANCH_CONDITIONAL) || (arch_instr.branch == BRANCH_OTHER))
+-            && arch_instr.branch_taken != arch_instr.branch_prediction)) { // conditional branches are re-evaluated at decode when the target is computed
++            && arch_instr.branch_taken != arch_instr.branch_prediction)) { // conditional branches are re-evaluated
++                                                                           // at decode when the target is computed
+       sim_stats.total_rob_occupancy_at_branch_mispredict += std::size(ROB);
+       sim_stats.branch_type_misses.increment(arch_instr.branch);
+       if (!warmup) {
+@@ -178,7 +204,8 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
+         arch_instr.branch_mispredicted = true;
+       }
+     } else {
+-      stop_fetch = arch_instr.branch_taken; // if correctly predicted taken, then we can't fetch anymore instructions this cycle
++      stop_fetch = arch_instr.branch_taken; // if correctly predicted taken, then we can't
++                                            // fetch anymore instructions this cycle
+     }
+ 
+     impl_update_btb(arch_instr.ip, arch_instr.branch_target, arch_instr.branch_taken, arch_instr.branch);
+@@ -190,7 +217,8 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
+ 
+ bool O3_CPU::do_init_instruction(ooo_model_instr& arch_instr)
+ {
+-  // fast warmup eliminates register dependencies between instructions branch predictor, cache contents, and prefetchers are still warmed up
++  // fast warmup eliminates register dependencies between instructions branch
++  // predictor, cache contents, and prefetchers are still warmed up
+   if (warmup) {
+     arch_instr.source_registers.clear();
+     arch_instr.destination_registers.clear();
+@@ -202,7 +230,8 @@ bool O3_CPU::do_init_instruction(ooo_model_instr& arch_instr)
+ 
+ long O3_CPU::check_dib()
+ {
+-  // scan through IFETCH_BUFFER to find instructions that hit in the decoded instruction buffer
++  // scan through IFETCH_BUFFER to find instructions that hit in the decoded
++  // instruction buffer
+   auto begin = std::find_if(std::begin(IFETCH_BUFFER), std::end(IFETCH_BUFFER), [](const ooo_model_instr& x) { return !x.dib_checked; });
+   auto [window_begin, window_end] = champsim::get_span(begin, std::end(IFETCH_BUFFER), champsim::bandwidth{FETCH_WIDTH});
+   std::for_each(window_begin, window_end, [this](auto& ifetch_entry) { this->do_check_dib(ifetch_entry); });
+@@ -250,7 +279,8 @@ long O3_CPU::fetch_instruction()
+   for (champsim::bandwidth l1i_bw{L1I_BANDWIDTH}; l1i_bw.has_remaining() && l1i_req_begin != std::end(IFETCH_BUFFER); l1i_bw.consume()) {
+     auto l1i_req_end = std::adjacent_find(l1i_req_begin, std::end(IFETCH_BUFFER), no_match_ip);
+     if (l1i_req_end != std::end(IFETCH_BUFFER)) {
+-      l1i_req_end = std::next(l1i_req_end); // adjacent_find returns the first of the non-equal elements
++      l1i_req_end = std::next(l1i_req_end); // adjacent_find returns the first
++                                            // of the non-equal elements
+     }
+ 
+     // Issue to L1I
+@@ -272,6 +302,7 @@ bool O3_CPU::do_fetch_instruction(std::deque<ooo_model_instr>::iterator begin, s
+   fetch_packet.v_address = begin->ip;
+   fetch_packet.instr_id = begin->instr_id;
+   fetch_packet.ip = begin->ip;
++  fetch_packet.instr = &(*begin);
+ 
+   std::transform(begin, end, std::back_inserter(fetch_packet.instr_depend_on_me), [](const auto& instr) { return instr.instr_id; });
+ 
+@@ -309,13 +340,46 @@ long O3_CPU::promote_to_decode()
+     return x.ready_time = time + lat;
+   };
+ 
+-  std::for_each(window_begin, decoded_window_end, mark_for_dib); // assume DECODE_LATENCY = DIB_HIT_LATENCY
++  std::for_each(window_begin, decoded_window_end,
++                mark_for_dib); // assume DECODE_LATENCY = DIB_HIT_LATENCY
+   std::move(window_begin, decoded_window_end, std::back_inserter(DIB_HIT_BUFFER));
+   // to DECODE_BUFFER
+ 
+   std::for_each(decoded_window_end, window_end, mark_for_decode);
+   std::move(decoded_window_end, window_end, std::back_inserter(DECODE_BUFFER));
+ 
++  // inwook start: Drain FTQ as instructions leave IFETCH_BUFFER
++  for (auto it = window_begin; it != window_end; ++it) {
++    if (!std::empty(FTQ)) {
++      // Logic: For each promoted instruction, current FTQ block's instruction
++      // count decreases. If the instruction is a "Taken Branch" OR "Sequential
++      // Block End (offset reached 0)", pop the FTQ entry.
++
++      bool pop_required = false;
++
++      // 1. Check Taken Branch (Matches Branch Block)
++      if (it->is_branch && it->branch_taken) {
++        pop_required = true;
++      }
++      // 2. Check Sequential End via Countdown
++      else if (FTQ.front().termination_offset == 0) {
++        pop_required = true;
++      } else {
++        // Decrease offset for next instruction
++        if (FTQ.front().termination_offset > 0)
++          FTQ.front().termination_offset--;
++      }
++
++      if (pop_required) {
++        // if (!warmup) fmt::print("[FTQ] Pop. Reason: {}, RemOffset: {}\n",
++        // (it->is_branch && it->branch_taken) ? "Taken" : "Count0",
++        // FTQ.front().termination_offset);
++        FTQ.pop_front();
++      }
++    }
++  }
++  // inwook end
++
+   long progress{std::distance(window_begin, window_end)};
+   IFETCH_BUFFER.erase(window_begin, window_end);
+   return progress;
+@@ -362,7 +426,8 @@ long O3_CPU::decode_instruction()
+     available_decode_bandwidth.consume();
+   }
+ 
+-  // decode instructions have not decoded, merge instructions with dib_hit_buffer then send to dispatch_buffer
++  // decode instructions have not decoded, merge instructions with
++  // dib_hit_buffer then send to dispatch_buffer
+   auto do_decode = [&, this](auto& db_entry) {
+     this->do_dib_update(db_entry);
+ 
+@@ -371,10 +436,21 @@ long O3_CPU::decode_instruction()
+       // These branches detect the misprediction at decode
+       if ((db_entry.branch == BRANCH_DIRECT_JUMP) || (db_entry.branch == BRANCH_DIRECT_CALL)
+           || (((db_entry.branch == BRANCH_CONDITIONAL) || (db_entry.branch == BRANCH_OTHER)) && db_entry.branch_taken == db_entry.branch_prediction)) {
+-        // clear the branch_mispredicted bit so we don't attempt to resume fetch again at execute
++        // clear the branch_mispredicted bit so we don't attempt to resume fetch
++        // again at execute
+         db_entry.branch_mispredicted = 0;
+         // pay misprediction penalty
+         this->fetch_resume_time = this->current_time + BRANCH_MISPREDICT_PENALTY;
++        if (!this->FTQ.empty()) {
++          // fmt::print("[FTQ] Cleared on Decode Flush (Count: {})\n",
++          // this->FTQ.size());
++        }
++        this->FTQ.clear(); // inwook: Clear FTQ on misprediction
++        // if (!warmup)
++        //   fmt::print("[FTQ] Stall Cleared (Decode)\n");
++        this->ftq_last_scan_instr_id = 0;
++        this->ftq_current_block_count = 0;
++        this->ftq_last_scan_ip = 0;
+       }
+     }
+     // Add to dispatch
+@@ -408,6 +484,50 @@ long O3_CPU::dispatch_instruction()
+ {
+   champsim::bandwidth available_dispatch_bandwidth{DISPATCH_WIDTH};
+ 
++  //@Minchan: Check Stall and Update stats
++  if (available_dispatch_bandwidth.has_remaining() && !std::empty(DISPATCH_BUFFER) && DISPATCH_BUFFER.front().ready_time <= current_time) {
++    StallType stall_type = StallType::NUM_STALL_TYPE;
++    // 1. ROB Stall
++    if (std::size(ROB) >= ROB_SIZE)
++      stall_type = StallType::ReOrderBuffer;
++    // 2. LQ Stall
++    else if (((std::size_t)std::count_if(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return !lq_entry.has_value(); })
++              < std::size(DISPATCH_BUFFER.front().source_memory)))
++      stall_type = StallType::LoadQueue;
++    // 3. SQ Stall
++    else if ((std::size(DISPATCH_BUFFER.front().destination_memory) + std::size(SQ)) > SQ_SIZE)
++      stall_type = StallType::StoreQueue;
++
++    if (stall_type != StallType::NUM_STALL_TYPE) {
++      sim_stats.stall_cycles[stall_type]++;
++    }
++
++    //@Minchan: We need to handle rob stall due to dtlb miss
++    if (stall_type == StallType::ReOrderBuffer) {
++      ROBStallType rob_stall_type;
++      if (ROB.front().stlb_miss) {
++        if (!ROB.front().translated) {
++          sim_stats.rob_stall_cycles[ROBStallType::ADDR_TRANS]++;
++          rob_stall_type = ADDR_TRANS;
++        } else {
++          rob_stall_type = REPLAY_LOAD;
++          sim_stats.rob_stall_cycles[ROBStallType::REPLAY_LOAD]++;
++        }
++      } else {
++        rob_stall_type = NON_REPLAY_LOAD;
++        sim_stats.rob_stall_cycles[ROBStallType::NON_REPLAY_LOAD]++;
++      }
++
++      //@Minchan: count rob stall instances
++      if (prev_rob_stall_cause_id != ROB.front().instr_id || prev_rob_stall_cause != rob_stall_type) {
++        sim_stats.rob_stall_counts[rob_stall_type]++;
++      }
++
++      prev_rob_stall_cause_id = ROB.front().instr_id;
++      prev_rob_stall_cause = rob_stall_type;
++    }
++  }
++
+   // dispatch DISPATCH_WIDTH instructions into the ROB
+   while (available_dispatch_bandwidth.has_remaining() && !std::empty(DISPATCH_BUFFER) && DISPATCH_BUFFER.front().ready_time <= current_time
+          && std::size(ROB) != ROB_SIZE
+@@ -430,7 +550,8 @@ long O3_CPU::schedule_instruction()
+   champsim::bandwidth search_bw{SCHEDULER_SIZE};
+   int progress{0};
+   for (auto rob_it = std::begin(ROB); rob_it != std::end(ROB) && search_bw.has_remaining(); ++rob_it) {
+-    // if there aren't enough physical registers available for the next instruction, stop scheduling
++    // if there aren't enough physical registers available for the next
++    // instruction, stop scheduling
+     unsigned long sources_to_allocate = std::count_if(rob_it->source_registers.begin(), rob_it->source_registers.end(),
+                                                       [&alloc = std::as_const(reg_allocator)](auto srcreg) { return !alloc.isAllocated(srcreg); });
+     if (reg_allocator.count_free_registers() < (sources_to_allocate + rob_it->destination_registers.size())) {
+@@ -512,13 +633,16 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
+   for (auto& smem : instr.source_memory) {
+     auto q_entry = std::find_if_not(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return lq_entry.has_value(); });
+     assert(q_entry != std::end(LQ));
+-    q_entry->emplace(smem, instr.instr_id, instr.ip, instr.asid); // add it to the load queue
++    //@Minchan
++    q_entry->emplace(&instr, smem, instr.instr_id, instr.ip,
++                     instr.asid); // add it to the load queue
+ 
+     // Check for forwarding
+     auto sq_it = std::max_element(std::begin(SQ), std::end(SQ), [smem](const auto& lhs, const auto& rhs) {
+       return lhs.virtual_address != smem || (rhs.virtual_address == smem && LSQ_ENTRY::program_order(lhs, rhs));
+     });
+     if (sq_it != std::end(SQ) && sq_it->virtual_address == smem) {
++      (*q_entry)->forwarded = true;
+       if (sq_it->fetch_issued) { // Store already executed
+         (*q_entry)->finish(instr);
+         q_entry->reset();
+@@ -536,7 +660,9 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
+ 
+   // store
+   for (auto& dmem : instr.destination_memory) {
+-    SQ.emplace_back(dmem, instr.instr_id, instr.ip, instr.asid); // add it to the store queue
++    //@Minchan
++    SQ.emplace_back(nullptr, dmem, instr.instr_id, instr.ip,
++                    instr.asid); // add it to the store queue
+   }
+ 
+   if constexpr (champsim::debug_print) {
+@@ -608,6 +734,8 @@ bool O3_CPU::do_complete_store(const LSQ_ENTRY& sq_entry)
+   data_packet.v_address = sq_entry.virtual_address;
+   data_packet.instr_id = sq_entry.instr_id;
+   data_packet.ip = sq_entry.ip;
++  //@Minchan: propagate ooo_model_instr from LSQ_Entry to request_type data type
++  data_packet.instr = sq_entry.instr;
+ 
+   if constexpr (champsim::debug_print) {
+     fmt::print("[SQ] {} instr_id: {} vaddr: {}\n", __func__, data_packet.instr_id, data_packet.v_address);
+@@ -618,10 +746,23 @@ bool O3_CPU::do_complete_store(const LSQ_ENTRY& sq_entry)
+ 
+ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
+ {
++  if (lq_entry.forwarded)
++    return false;
+   CacheBus::request_type data_packet;
+   data_packet.v_address = lq_entry.virtual_address;
+   data_packet.instr_id = lq_entry.instr_id;
+   data_packet.ip = lq_entry.ip;
++  //@Minchan: propagate ooo_model_instr from LSQ_Entry to request_type data type
++  data_packet.instr = lq_entry.instr;
++  //@inwook: add own instr_id to instr_depend_on_me for proper matching in
++  // handle_memory_return
++  data_packet.instr_depend_on_me.push_back(lq_entry.instr_id);
++
++  //@Minchan: trace all load instructions
++  if (!warmup && flag_cpu_trace) {
++    fmt::print("[CPU_TRACE] execute_load instr_id: {} ptr: {} cycle: {} vaddr: {}\n", data_packet.instr_id, static_cast<void*>(data_packet.instr),
++               current_time.time_since_epoch() / clock_period, data_packet.v_address.to<uint64_t>());
++  }
+ 
+   if constexpr (champsim::debug_print) {
+     fmt::print("[LQ] {} instr_id: {} vaddr: {}\n", __func__, data_packet.instr_id, data_packet.v_address);
+@@ -632,6 +773,13 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
+ 
+ void O3_CPU::do_complete_execution(ooo_model_instr& instr)
+ {
++  //@Minchan: trace all instructions
++  if (!warmup && flag_cpu_trace) {
++    fmt::print("[CPU_TRACE] do_complete_execution instr_id: {} "
++               "completed_mem_ops: {} num_mem_ops: {} cycle: {}\n",
++               instr.instr_id, instr.completed_mem_ops, instr.num_mem_ops(), current_time.time_since_epoch() / clock_period);
++  }
++
+   for (auto dreg : instr.destination_registers) {
+     // mark physical register's data as valid
+     reg_allocator.complete_dest_register(dreg);
+@@ -640,7 +788,18 @@ void O3_CPU::do_complete_execution(ooo_model_instr& instr)
+   instr.completed = true;
+ 
+   if (instr.branch_mispredicted) {
++    // fmt::print("[BRANCH] Branch Mispredicted instr_id: {} ip: {} taken:
++    // {}\n", instr.instr_id, instr.ip, instr.branch_taken);
+     fetch_resume_time = current_time + BRANCH_MISPREDICT_PENALTY;
++    if (!FTQ.empty()) {
++      // fmt::print("[FTQ] Cleared on Execute Flush (Count: {})\n", FTQ.size());
++    }
++    FTQ.clear();
++    // if (!warmup)
++    //   fmt::print("[FTQ] Stall Cleared (Execute)\n");
++    ftq_last_scan_instr_id = 0;
++    ftq_current_block_count = 0;
++    ftq_last_scan_ip = 0;
+   }
+ }
+ 
+@@ -649,6 +808,17 @@ long O3_CPU::complete_inflight_instruction()
+   // update ROB entries with completed executions
+   champsim::bandwidth complete_bw{EXEC_WIDTH};
+   for (auto rob_it = std::begin(ROB); rob_it != std::end(ROB) && complete_bw.has_remaining(); ++rob_it) {
++    //@Minchan: trace all instructions
++    if (!warmup && flag_cpu_trace) {
++      fmt::print("[CPU_TRACE] complete_inflight_instruction checking instr_id: "
++                 "{} cycle: {} executed: {} completed: {} ready_time: {} "
++                 "current_time: {} "
++                 "completed_mem_ops: {} num_mem_ops: {} condition_met: {}\n",
++                 rob_it->instr_id, current_time.time_since_epoch() / clock_period, rob_it->executed, rob_it->completed,
++                 rob_it->ready_time.time_since_epoch() / clock_period, current_time.time_since_epoch() / clock_period, rob_it->completed_mem_ops,
++                 rob_it->num_mem_ops(),
++                 (rob_it->executed && !rob_it->completed && (rob_it->ready_time <= current_time) && rob_it->completed_mem_ops == rob_it->num_mem_ops()));
++    }
+     if (rob_it->executed && !rob_it->completed && (rob_it->ready_time <= current_time) && rob_it->completed_mem_ops == rob_it->num_mem_ops()) {
+       do_complete_execution(*rob_it);
+       complete_bw.consume();
+@@ -669,6 +839,17 @@ long O3_CPU::handle_memory_return()
+     while (fetch_bw.has_remaining() && !l1i_entry.instr_depend_on_me.empty()) {
+       auto fetched = std::find_if(std::begin(IFETCH_BUFFER), std::end(IFETCH_BUFFER), ooo_model_instr::matches_id(l1i_entry.instr_depend_on_me.front()));
+       if (fetched != std::end(IFETCH_BUFFER) && champsim::block_number{fetched->ip} == champsim::block_number{l1i_entry.v_address} && fetched->fetch_issued) {
++        //@Minchan: trace all instruction fetches
++        if (!warmup && flag_cpu_trace) {
++          auto rob_entry = std::partition_point(std::begin(ROB), std::end(ROB), ooo_model_instr::precedes(fetched->instr_id));
++          if (rob_entry != std::end(ROB)) {
++            fmt::print("[CPU_TRACE] handle_memory_return PC fetch completed "
++                       "instr_id: {} cycle: {} completed_mem_ops: {} "
++                       "num_mem_ops: {} executed: {} completed: {}\n",
++                       fetched->instr_id, current_time.time_since_epoch() / clock_period, rob_entry->completed_mem_ops, rob_entry->num_mem_ops(),
++                       rob_entry->executed, rob_entry->completed);
++          }
++        }
+         fetched->fetch_completed = true;
+         fetch_bw.consume();
+         ++progress;
+@@ -683,6 +864,19 @@ long O3_CPU::handle_memory_return()
+ 
+     // remove this entry if we have serviced all of its instructions
+     if (l1i_entry.instr_depend_on_me.empty()) {
++      // inwook start: Update FTQ state if this cache line return matches an FTQ
++      // entry
++      for (auto& ftq_entry : FTQ) {
++        if (champsim::block_number{ftq_entry.ip} == champsim::block_number{l1i_entry.v_address}) {
++          if (ftq_entry.fetch_state == 2) { // Only update if it was waiting (or predicted)
++            ftq_entry.fetch_state = 3;      // 3: Ready / Completed
++            // if (!warmup) fmt::print("[FTQ] State Update 2->3 (Filled). IP:
++            // {:#x}\n", ftq_entry.ip.to<uint64_t>());
++          }
++        }
++      }
++      // inwook end
++
+       L1I_bus.lower_level->returned.pop_front();
+       ++progress;
+     }
+@@ -691,8 +885,32 @@ long O3_CPU::handle_memory_return()
+   auto l1d_it = std::begin(L1D_bus.lower_level->returned);
+   for (champsim::bandwidth l1d_bw{L1D_BANDWIDTH}; l1d_bw.has_remaining() && l1d_it != std::end(L1D_bus.lower_level->returned); l1d_bw.consume(), ++l1d_it) {
+     for (auto& lq_entry : LQ) {
+-      if (lq_entry.has_value() && lq_entry->fetch_issued && champsim::block_number{lq_entry->virtual_address} == champsim::block_number{l1d_it->v_address}) {
++      //@inwook_add
++      if (lq_entry.has_value() && lq_entry->fetch_issued && champsim::block_number{lq_entry->virtual_address} == champsim::block_number{l1d_it->v_address}
++          && std::find(std::begin(l1d_it->instr_depend_on_me), std::end(l1d_it->instr_depend_on_me), lq_entry->instr_id)
++                 != std::end(l1d_it->instr_depend_on_me)) {
++        //@Minchan: trace all load returns
++        if (!warmup && flag_cpu_trace) {
++          auto rob_entry = std::partition_point(std::begin(ROB), std::end(ROB), ooo_model_instr::precedes(lq_entry->instr_id));
++          if (rob_entry != std::end(ROB)) {
++            fmt::print("[CPU_TRACE] handle_memory_return before finish instr_id: {} "
++                       "cycle: {} vaddr: {} completed_mem_ops: {} num_mem_ops: {}\n",
++                       lq_entry->instr_id, current_time.time_since_epoch() / clock_period, lq_entry->virtual_address.to<uint64_t>(),
++                       rob_entry->completed_mem_ops, rob_entry->num_mem_ops());
++          }
++        }
+         lq_entry->finish(std::begin(ROB), std::end(ROB));
++        //@Minchan: trace all load returns
++        if (!warmup && flag_cpu_trace) {
++          auto rob_entry = std::partition_point(std::begin(ROB), std::end(ROB), ooo_model_instr::precedes(lq_entry->instr_id));
++          if (rob_entry != std::end(ROB)) {
++            fmt::print("[CPU_TRACE] handle_memory_return after finish "
++                       "instr_id: {} cycle: {} completed_mem_ops: {} "
++                       "num_mem_ops: {} completed: {}\n",
++                       lq_entry->instr_id, current_time.time_since_epoch() / clock_period, rob_entry->completed_mem_ops, rob_entry->num_mem_ops(),
++                       rob_entry->completed);
++          }
++        }
+         lq_entry.reset();
+         ++progress;
+       }
+@@ -718,6 +936,13 @@ long O3_CPU::retire_rob()
+   // commit register writes to backend RAT
+   // and recycle the old physical registers
+   for (auto rob_it = retire_begin; rob_it != retire_end; ++rob_it) {
++    //@Minchan: trace all retired instructions
++    if (!warmup && flag_cpu_trace) {
++      fmt::print("[CPU_TRACE] retire_rob instr_id: {} ptr: {} cycle: {} "
++                 "completed_mem_ops: {} num_mem_ops: {}\n",
++                 rob_it->instr_id, static_cast<void*>(const_cast<ooo_model_instr*>(&(*rob_it))), current_time.time_since_epoch() / clock_period,
++                 rob_it->completed_mem_ops, rob_it->num_mem_ops());
++    }
+     for (auto dreg : rob_it->destination_registers) {
+       reg_allocator.retire_dest_register(dreg);
+     }
+@@ -770,8 +995,9 @@ void O3_CPU::print_deadlock()
+                       entry.num_mem_ops() - entry.completed_mem_ops,
+                       entry.ready_time.time_since_epoch() / period};
+   };
+-  std::string_view instr_fmt{
+-      "instr_id: {} fetch_issued: {} fetch_completed: {} scheduled: {} executed: {} completed: {} num_reg_dependent: {} num_mem_ops: {} event: {}"};
++  std::string_view instr_fmt{"instr_id: {} fetch_issued: {} fetch_completed: "
++                             "{} scheduled: {} executed: {} completed: {} "
++                             "num_reg_dependent: {} num_mem_ops: {} event: {}"};
+   champsim::range_print_deadlock(IFETCH_BUFFER, "cpu" + std::to_string(cpu) + "_IFETCH", instr_fmt, instr_pack);
+   champsim::range_print_deadlock(DECODE_BUFFER, "cpu" + std::to_string(cpu) + "_DECODE", instr_fmt, instr_pack);
+   champsim::range_print_deadlock(DISPATCH_BUFFER, "cpu" + std::to_string(cpu) + "_DISPATCH", instr_fmt, instr_pack);
+@@ -796,14 +1022,16 @@ void O3_CPU::print_deadlock()
+                    [](const std::optional<LSQ_ENTRY>& lq_entry) { return lq_entry->producer_id; });
+     return std::tuple{entry.instr_id, entry.virtual_address, entry.fetch_issued, entry.ready_time.time_since_epoch() / period, depend_ids};
+   };
+-  std::string_view sq_fmt{"instr_id: {} address: {} fetch_issued: {} event_cycle: {} LQ waiting: {}"};
++  std::string_view sq_fmt{"instr_id: {} address: {} fetch_issued: {} "
++                          "event_cycle: {} LQ waiting: {}"};
+   champsim::range_print_deadlock(LQ, "cpu" + std::to_string(cpu) + "_LQ", lq_fmt, lq_pack);
+   champsim::range_print_deadlock(SQ, "cpu" + std::to_string(cpu) + "_SQ", sq_fmt, sq_pack);
+ }
+ // LCOV_EXCL_STOP
+-
+-LSQ_ENTRY::LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address local_ip, std::array<uint8_t, 2> local_asid)
+-    : champsim::program_ordered<LSQ_ENTRY>{id}, virtual_address(addr), ip(local_ip), asid(local_asid)
++//@Minchan
++LSQ_ENTRY::LSQ_ENTRY(ooo_model_instr* rob_entry, champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address local_ip,
++                     std::array<uint8_t, 2> local_asid)
++    : champsim::program_ordered<LSQ_ENTRY>{id}, virtual_address(addr), ip(local_ip), asid(local_asid), instr{rob_entry}
+ {
+ }
+ 
+@@ -818,6 +1046,15 @@ void LSQ_ENTRY::finish(ooo_model_instr& rob_entry) const
+ {
+   assert(rob_entry.instr_id == this->instr_id);
+ 
++  //@Minchan: trace all instructions (current_time 접근 불가하므로
++  // handle_memory_return에서 로그 남김)
++  // if (!warmup) {
++  //   fmt::print("[CPU_TRACE] LSQ_ENTRY::finish instr_id: {} completed_mem_ops:
++  //   {} -> {} num_mem_ops: {}\n",
++  //              rob_entry.instr_id, rob_entry.completed_mem_ops,
++  //              rob_entry.completed_mem_ops + 1, rob_entry.num_mem_ops());
++  // }
++
+   ++rob_entry.completed_mem_ops;
+   assert(rob_entry.completed_mem_ops <= rob_entry.num_mem_ops());
+ 
+@@ -847,3 +1084,134 @@ bool CacheBus::issue_write(request_type data_packet)
+ 
+   return lower_level->add_wq(data_packet);
+ }
++
++bool CacheBus::issue_prefetch(request_type data_packet)
++{
++  data_packet.address = data_packet.v_address;
++  data_packet.is_translated = false;
++  data_packet.cpu = cpu;
++  data_packet.type = access_type::PREFETCH;
++  data_packet.response_requested = false; // Prefetch responses usually not tracked same way as loads
++
++  return lower_level->add_pq(data_packet);
++}
++
++// inwook start
++void O3_CPU::process_ftq()
++{
++  if (std::empty(FTQ)) {
++    return;
++  }
++
++  if (!ENABLE_FDIP) {
++    return;
++  }
++
++  // Iterate through FTQ, skipping the first entry (Head) because it is likely
++  // being demand-fetched right now. We want to prefetch FUTURE blocks (Tail).
++  // Iterate through FTQ, skipping the first entry (Head) because it is likely
++  // being demand-fetched right now. We want to prefetch FUTURE blocks (Tail).
++  if (std::empty(FTQ)) {
++    if (!warmup && (current_time.time_since_epoch() / clock_period) % 1000 == 0)
++      fmt::print("[FTQ] Process: FTQ Empty\n");
++    return;
++  }
++
++  int prefetch_count = 0;
++  int issued_count = 0;
++  for (auto it = std::next(FTQ.begin()); it != FTQ.end(); ++it) {
++    // if (prefetch_count >= 15)
++    //   break; // Limit lookahead to 15 entries
++    prefetch_count++;
++
++    if (it->fetch_state == 1) { // 1: Prediction Completed
++      // Issue Prefetch using CACHE::prefetch_line
++      bool success = l1i->prefetch_line(it->ip, true, 0);
++      if (success) {
++        it->fetch_state = 2; // 2: Wait for Fill
++        issued_count++;
++        ftq_accumulated_issued_count++;
++      } else {
++        break; // Bus full or MSHR full, stop for this cycle
++      }
++    }
++  }
++}
++// inwook start
++
++void O3_CPU::predict_future_blocks()
++{
++  if (!ENABLE_FDIP)
++    return;
++  if (input_queue.empty())
++    return;
++
++  // champsim::bandwidth instrs_to_scan_this_cycle{FETCH_WIDTH}; // 의도하신 대역폭 제한
++  int ftq_added_this_cycle = 0;
++
++  for (const auto& instr : input_queue) {
++    if (instr.instr_id <= ftq_last_scan_instr_id)
++      continue;
++
++    // 스캔 대역폭 소모
++    // instrs_to_scan_this_cycle.consume();
++
++    // 2. Fill Rate Limit: Stop if we already added 1 entry to FTQ this cycle
++    if (ftq_added_this_cycle >= 1) {
++      break;
++    }
++
++    uint64_t curr_ip = instr.ip.to<uint64_t>();
++    uint64_t curr_line = curr_ip >> FQ_OFFSET;
++    uint64_t last_line = ftq_last_scan_ip >> FQ_OFFSET;
++
++    // [수정 포인트 2: 순차 블록 체크 복구]
++    // 캐시 라인 경계를 넘었을 때 (SEQ Push)
++    if (ftq_last_scan_ip != 0 && curr_line != last_line) {
++      if (FTQ.size() >= FTQ_SIZE)
++        break;
++
++      FTQ_ENTRY new_entry;
++      new_entry.ip = champsim::address{last_line << FQ_OFFSET}; // 이전 블록 시작 주소
++      new_entry.taken = false;
++      new_entry.termination_offset = ftq_current_block_count - 1; // [수정 포인트 4: 카운트 기반 복구]
++      new_entry.fetch_state = 1;
++      new_entry.event_cycle = current_time.time_since_epoch() / clock_period;
++      std::copy(std::begin(instr.asid), std::end(instr.asid), std::begin(new_entry.asid));
++
++      FTQ.push_back(new_entry);
++      ftq_added_this_cycle++;      // Count added entry
++      ftq_current_block_count = 0; // 리셋
++    }
++
++    // 상태 업데이트
++    ftq_last_scan_ip = curr_ip;
++    ftq_current_block_count++;
++    ftq_last_scan_instr_id = instr.instr_id;
++
++    // [수정 포인트 2: 분기 블록 체크]
++    // 현재 명령어가 Taken Branch일 때 (BR Push)
++    if (instr.is_branch && instr.branch_taken) {
++      if (FTQ.size() >= FTQ_SIZE)
++        break;
++
++      FTQ_ENTRY new_entry;
++      new_entry.ip = champsim::address{curr_line << FQ_OFFSET}; // 현재 블록 시작 주소
++      new_entry.taken = true;
++      new_entry.termination_offset = ftq_current_block_count - 1;
++      new_entry.fetch_state = 1;
++      new_entry.event_cycle = current_time.time_since_epoch() / clock_period;
++      std::copy(std::begin(instr.asid), std::end(instr.asid), std::begin(new_entry.asid));
++
++      FTQ.push_back(new_entry);
++      ftq_added_this_cycle++; // Count added entry
++
++      ftq_current_block_count = 0; // 리셋
++      ftq_last_scan_ip = 0;        // 다음 명령어에서 새 블록 시작 강제
++    }
++
++    // 대역폭을 다 썼으면 루프 중단
++    // if (!instrs_to_scan_this_cycle.has_remaining())
++    //   break;
++  }
++}
+\ No newline at end of file
+diff --git a/src/plain_printer.cc b/src/plain_printer.cc
+index 972644b..1b5cbc2 100644
+--- a/src/plain_printer.cc
++++ b/src/plain_printer.cc
+@@ -42,6 +42,9 @@ std::vector<std::string> champsim::plain_printer::format(O3_CPU::stats_type stat
+ {
+   constexpr std::array types{branch_type::BRANCH_DIRECT_JUMP, branch_type::BRANCH_INDIRECT,      branch_type::BRANCH_CONDITIONAL,
+                              branch_type::BRANCH_DIRECT_CALL, branch_type::BRANCH_INDIRECT_CALL, branch_type::BRANCH_RETURN};
++  constexpr std::array stall_types{StallType::ReOrderBuffer, StallType::LoadQueue, StallType::StoreQueue};
++  constexpr std::array rob_stall_types{ROBStallType::ADDR_TRANS, ROBStallType::REPLAY_LOAD, ROBStallType::NON_REPLAY_LOAD};
++
+   auto total_branch = std::ceil(
+       std::accumulate(std::begin(types), std::end(types), 0LL, [tbt = stats.total_branch_types](auto acc, auto next) { return acc + tbt.value_or(next, 0); }));
+   auto total_mispredictions = std::ceil(
+@@ -62,6 +65,28 @@ std::vector<std::string> champsim::plain_printer::format(O3_CPU::stats_type stat
+                                 ::print_ratio(std::kilo::num * stats.branch_type_misses.value_or(idx, 0), stats.instrs())));
+   }
+ 
++  //@Minchan
++  lines.emplace_back("\n\n====Backend Stall Breakdown====");
++  for (auto idx : stall_types) {
++    lines.push_back(fmt::format("{}: {}", stall_type_names.at(champsim::to_underlying(idx)), stats.stall_cycles[idx]));
++  }
++  // lines.push_back(fmt::format("Non-Stall Cycles: {}", stats.non_stall_cycles));
++
++  lines.emplace_back("\n\n====ROB Stall Breakdown====");
++  lines.emplace_back("\n== Average ==");
++  for (auto idx : rob_stall_types) {
++    lines.push_back(fmt::format("{}: {}", rob_stall_type_names.at(champsim::to_underlying(idx)),
++                                (float)((float)stats.rob_stall_cycles[idx] / (float)stats.rob_stall_counts[idx])));
++  }
++  lines.emplace_back("\n== Total ==");
++  for (auto idx : rob_stall_types) {
++    lines.push_back(fmt::format("{}: {}", rob_stall_type_names.at(champsim::to_underlying(idx)), stats.rob_stall_cycles[idx]));
++  }
++  lines.emplace_back("\n== Counts ==");
++  for (auto idx : rob_stall_types) {
++    lines.push_back(fmt::format("{}: {}", rob_stall_type_names.at(champsim::to_underlying(idx)), stats.rob_stall_counts[idx]));
++  }
++
+   return lines;
+ }
+ 
+@@ -200,7 +225,156 @@ std::vector<std::string> champsim::plain_printer::format(champsim::phase_stats&
+     lines.emplace_back("");
+     std::move(std::begin(sublines), std::end(sublines), std::back_inserter(lines));
+   }
++  // HJ: print TLB→Cache/MEM breakdown ONCE at the very end (ROI totals across all caches)
++  {
++    auto S = [&](auto f) -> uint64_t {
++      uint64_t s = 0;
++      for (const auto& c : stats.roi_cache_stats)
++        s += f(c);
++      return s;
++    };
++
++    // small helpers for pretty tables
++    auto sep = [&]() {
++      lines.emplace_back("---------------------------------------------------------------");
++    };
++    auto table_header = [&](std::string title) {
++      lines.emplace_back("");
++      lines.emplace_back(title);
++      lines.emplace_back(fmt::format("  {:<28} {:>12} {:>12} {:>12} {:>12} {:>12}", "(case)", "L1I", "L1D", "L2C", "LLC", "MEM"));
++    };
++    auto row = [&](std::string label, uint64_t l1i, uint64_t l1d, uint64_t l2c, uint64_t llc, uint64_t mem) {
++      lines.push_back(fmt::format("  {:<28} {:>12} {:>12} {:>12} {:>12} {:>12}", label, l1i, l1d, l2c, llc, mem));
++    };
+ 
++    lines.emplace_back("");
++    lines.emplace_back("==== TLB→Cache/MEM Breakdown (ROI totals across all caches) ====");
++
++    // -----------------------
++    // DTLB
++    // -----------------------
++    table_header("DTLB");
++    // DTLB hit -> final level
++    row("DTLB hit → final level", S([](const auto& c) { return c.dtlb_hit_L1I_hit; }), S([](const auto& c) { return c.dtlb_hit_L1D_hit; }),
++        S([](const auto& c) { return c.dtlb_hit_L2C_hit; }), S([](const auto& c) { return c.dtlb_hit_LLC_hit; }),
++        S([](const auto& c) { return c.dtlb_hit_MEM_hit; }));
++    sep();
++    // STLB hit -> final level
++    row("STLB hit → final level", S([](const auto& c) { return c.dtlb_miss_stlb_hit_L1I_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_hit_L1D_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_hit_L2C_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_hit_LLC_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_hit_MEM_hit; }));
++    // Aggregate STLB miss -> final level across all resolution locations
++    row("STLB miss → final level", S([](const auto& c) {
++          return c.dtlb_miss_stlb_miss_L1D_hit_L1I_hit + c.dtlb_miss_stlb_miss_L2C_hit_L1I_hit + c.dtlb_miss_stlb_miss_LLC_hit_L1I_hit
++                 + c.dtlb_miss_stlb_miss_MEM_hit_L1I_hit;
++        }),
++        S([](const auto& c) {
++          return c.dtlb_miss_stlb_miss_L1D_hit_L1D_hit + c.dtlb_miss_stlb_miss_L2C_hit_L1D_hit + c.dtlb_miss_stlb_miss_LLC_hit_L1D_hit
++                 + c.dtlb_miss_stlb_miss_MEM_hit_L1D_hit;
++        }),
++        S([](const auto& c) {
++          return c.dtlb_miss_stlb_miss_L1D_hit_L2C_hit + c.dtlb_miss_stlb_miss_L2C_hit_L2C_hit + c.dtlb_miss_stlb_miss_LLC_hit_L2C_hit
++                 + c.dtlb_miss_stlb_miss_MEM_hit_L2C_hit;
++        }),
++        S([](const auto& c) {
++          return c.dtlb_miss_stlb_miss_L1D_hit_LLC_hit + c.dtlb_miss_stlb_miss_L2C_hit_LLC_hit + c.dtlb_miss_stlb_miss_LLC_hit_LLC_hit
++                 + c.dtlb_miss_stlb_miss_MEM_hit_LLC_hit;
++        }),
++        S([](const auto& c) {
++          return c.dtlb_miss_stlb_miss_L1D_hit_MEM_hit + c.dtlb_miss_stlb_miss_L2C_hit_MEM_hit + c.dtlb_miss_stlb_miss_LLC_hit_MEM_hit
++                 + c.dtlb_miss_stlb_miss_MEM_hit_MEM_hit;
++        }));
++    sep();
++    // STLB miss resolved @ each level -> final level
++    row("STLB miss resolved @ L1D", S([](const auto& c) { return c.dtlb_miss_stlb_miss_L1D_hit_L1I_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_L1D_hit_L1D_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_L1D_hit_L2C_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_L1D_hit_LLC_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_L1D_hit_MEM_hit; }));
++    row("STLB miss resolved @ L2C", S([](const auto& c) { return c.dtlb_miss_stlb_miss_L2C_hit_L1I_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_L2C_hit_L1D_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_L2C_hit_L2C_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_L2C_hit_LLC_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_L2C_hit_MEM_hit; }));
++    row("STLB miss resolved @ LLC", S([](const auto& c) { return c.dtlb_miss_stlb_miss_LLC_hit_L1I_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_LLC_hit_L1D_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_LLC_hit_L2C_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_LLC_hit_LLC_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_LLC_hit_MEM_hit; }));
++    row("STLB miss resolved @ MEM", S([](const auto& c) { return c.dtlb_miss_stlb_miss_MEM_hit_L1I_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_MEM_hit_L1D_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_MEM_hit_L2C_hit; }),
++        S([](const auto& c) { return c.dtlb_miss_stlb_miss_MEM_hit_LLC_hit; }), S([](const auto& c) { return c.dtlb_miss_stlb_miss_MEM_hit_MEM_hit; }));
++
++    // -----------------------
++    // ITLB
++    // -----------------------
++    table_header("ITLB");
++    // ITLB hit -> final level
++    row("ITLB hit → final level", S([](const auto& c) { return c.itlb_hit_L1I_hit; }), S([](const auto& c) { return c.itlb_hit_L1D_hit; }),
++        S([](const auto& c) { return c.itlb_hit_L2C_hit; }), S([](const auto& c) { return c.itlb_hit_LLC_hit; }),
++        S([](const auto& c) { return c.itlb_hit_MEM_hit; }));
++    sep();
++    // STLB hit -> final level
++    row("STLB hit → final level", S([](const auto& c) { return c.itlb_miss_stlb_hit_L1I_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_hit_L1D_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_hit_L2C_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_hit_LLC_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_hit_MEM_hit; }));
++    // Aggregate STLB miss -> final level across all resolution locations
++    row("STLB miss → final level", S([](const auto& c) {
++          return c.itlb_miss_stlb_miss_L1D_hit_L1I_hit + c.itlb_miss_stlb_miss_L2C_hit_L1I_hit + c.itlb_miss_stlb_miss_LLC_hit_L1I_hit
++                 + c.itlb_miss_stlb_miss_MEM_hit_L1I_hit;
++        }),
++        S([](const auto& c) {
++          return c.itlb_miss_stlb_miss_L1D_hit_L1D_hit + c.itlb_miss_stlb_miss_L2C_hit_L1D_hit + c.itlb_miss_stlb_miss_LLC_hit_L1D_hit
++                 + c.itlb_miss_stlb_miss_MEM_hit_L1D_hit;
++        }),
++        S([](const auto& c) {
++          return c.itlb_miss_stlb_miss_L1D_hit_L2C_hit + c.itlb_miss_stlb_miss_L2C_hit_L2C_hit + c.itlb_miss_stlb_miss_LLC_hit_L2C_hit
++                 + c.itlb_miss_stlb_miss_MEM_hit_L2C_hit;
++        }),
++        S([](const auto& c) {
++          return c.itlb_miss_stlb_miss_L1D_hit_LLC_hit + c.itlb_miss_stlb_miss_L2C_hit_LLC_hit + c.itlb_miss_stlb_miss_LLC_hit_LLC_hit
++                 + c.itlb_miss_stlb_miss_MEM_hit_LLC_hit;
++        }),
++        S([](const auto& c) {
++          return c.itlb_miss_stlb_miss_L1D_hit_MEM_hit + c.itlb_miss_stlb_miss_L2C_hit_MEM_hit + c.itlb_miss_stlb_miss_LLC_hit_MEM_hit
++                 + c.itlb_miss_stlb_miss_MEM_hit_MEM_hit;
++        }));
++    sep();
++    // STLB miss resolved @ each level -> final level
++    row("STLB miss resolved @ L1D", S([](const auto& c) { return c.itlb_miss_stlb_miss_L1D_hit_L1I_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_L1D_hit_L1D_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_L1D_hit_L2C_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_L1D_hit_LLC_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_L1D_hit_MEM_hit; }));
++    row("STLB miss resolved @ L2C", S([](const auto& c) { return c.itlb_miss_stlb_miss_L2C_hit_L1I_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_L2C_hit_L1D_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_L2C_hit_L2C_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_L2C_hit_LLC_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_L2C_hit_MEM_hit; }));
++    row("STLB miss resolved @ LLC", S([](const auto& c) { return c.itlb_miss_stlb_miss_LLC_hit_L1I_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_LLC_hit_L1D_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_LLC_hit_L2C_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_LLC_hit_LLC_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_LLC_hit_MEM_hit; }));
++    row("STLB miss resolved @ MEM", S([](const auto& c) { return c.itlb_miss_stlb_miss_MEM_hit_L1I_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_MEM_hit_L1D_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_MEM_hit_L2C_hit; }),
++        S([](const auto& c) { return c.itlb_miss_stlb_miss_MEM_hit_LLC_hit; }), S([](const auto& c) { return c.itlb_miss_stlb_miss_MEM_hit_MEM_hit; }));
++    lines.emplace_back("");
++    lines.emplace_back("==== L1I Demand Access Breakdown ====");
++
++    uint64_t l1i_hit = S([](const auto& c) { return c.fdip_l1i_hit; });
++    uint64_t l1i_hit_non_pf = S([](const auto& c) { return c.fdip_l1i_hit_non_pf; });
++    uint64_t l1i_merge = S([](const auto& c) { return c.fdip_l1i_mshr_merge; });
++    uint64_t l1i_merge_non_pf = S([](const auto& c) { return c.fdip_l1i_mshr_merge_non_pf; });
++    uint64_t l1i_miss = S([](const auto& c) { return c.fdip_l1i_miss; });
++    uint64_t l1i_total = S([](const auto& c) { return c.fdip_l1i_total_access; });
++    uint64_t l1i_sum = l1i_hit + l1i_hit_non_pf + l1i_merge + l1i_merge_non_pf + l1i_miss;
++
++    auto print_line = [&](std::string label, uint64_t count, uint64_t total) {
++      if (total > 0) {
++        lines.push_back(fmt::format("{:<30} : {:10} ({:6.2f}%)", label, count, 100.0 * count / total));
++      } else {
++        lines.push_back(fmt::format("{:<30} : {:10} (  0.00%)", label, count));
++      }
++    };
++
++    print_line("L1I Hit (FDIP Covered)", l1i_hit, l1i_total);
++    print_line("L1I Hit (Non-Prefetch)", l1i_hit_non_pf, l1i_total);
++    print_line("L1I Late Prefetch (Merge)", l1i_merge, l1i_total);
++    print_line("L1I Merge (Non-Prefetch)", l1i_merge_non_pf, l1i_total);
++    print_line("L1I Miss", l1i_miss, l1i_total);
++    lines.push_back(fmt::format("{:<30} : {:10}", "TOTAL (Direct Count)", l1i_total));
++    lines.push_back(fmt::format("{:<30} : {:10} (Check Sum)", "Sum of Components", l1i_sum));
++  }
++  // HJ
+   return lines;
+ }
+ 
+diff --git a/src/ptw.cc b/src/ptw.cc
+index b555659..b66b094 100644
+--- a/src/ptw.cc
++++ b/src/ptw.cc
+@@ -68,6 +68,7 @@ auto PageTableWalker::handle_read(const request_type& handle_pkt, channel_type*
+   mshr_type fwd_mshr{handle_pkt, walk_init.level};
+   fwd_mshr.address = champsim::address{champsim::splice(champsim::page_number{walk_init.ptw_addr}, champsim::page_offset{walk_offset})};
+   fwd_mshr.v_address = handle_pkt.address;
++  fwd_mshr.instr = handle_pkt.instr;
+   if (handle_pkt.response_requested) {
+     fwd_mshr.to_return = {&ul->returned};
+   }
+@@ -110,6 +111,7 @@ auto PageTableWalker::step_translation(const mshr_type& source) -> std::optional
+   packet.asid[1] = source.asid[1];
+   packet.is_translated = true;
+   packet.type = access_type::TRANSLATION;
++  packet.instr = source.instr;
+ 
+   bool success = lower_level->add_rq(packet);
+   if (success) {

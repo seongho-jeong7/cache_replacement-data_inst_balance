@@ -13,6 +13,8 @@ METRICS = [
     "llc_mpki",
     "stlb_mpki",
     "off_chip_traffic_mpki",
+    "fdip_l1i_covered_pct",
+    "fdip_l1i_miss_pct",
 ]
 
 
@@ -54,15 +56,20 @@ def print_table(metrics_csv):
     grouped = summarize(rows)
     ok_total = sum(1 for row in rows if row.get("status") == "ok")
     fail_total = len(rows) - ok_total
+    has_fdip = any(row.get("fdip_l1i_total") for row in rows)
+    width = 134 if has_fdip else 112
 
     print(f"ChampSim Summary: {metrics_csv}")
     print(f"Traces: {len(rows)} total, {ok_total} ok, {fail_total} failed")
-    print("-" * 112)
-    print(
+    print("-" * width)
+    header = (
         "| Trace Set  | Group      | Total | OK  | Fail |"
         " Avg IPC | Br MPKI | L1D MPKI | L2C MPKI | LLC MPKI | STLB MPKI | OffChip |"
     )
-    print("-" * 112)
+    if has_fdip:
+        header += " FDIP Cov | L1I Miss |"
+    print(header)
+    print("-" * width)
 
     for (trace_set, trace_group), group_rows in sorted(grouped.items()):
         ok_rows = [row for row in group_rows if row.get("status") == "ok"]
@@ -79,10 +86,18 @@ def print_table(metrics_csv):
             f"{fmt(values['l2c_mpki'], 9, 2)} |"
             f"{fmt(values['llc_mpki'], 9, 2)} |"
             f"{fmt(values['stlb_mpki'], 9, 2)} |"
-            f"{fmt(values['off_chip_traffic_mpki'], 8, 2)} |"
+            f"{fmt(values['off_chip_traffic_mpki'], 8, 2)} |",
+            end="",
         )
+        if has_fdip:
+            print(
+                f"{fmt(values['fdip_l1i_covered_pct'], 9, 2)} |"
+                f"{fmt(values['fdip_l1i_miss_pct'], 8, 2)} |",
+                end="",
+            )
+        print()
 
-    print("-" * 112)
+    print("-" * width)
 
 
 def main():

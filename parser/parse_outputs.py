@@ -18,8 +18,17 @@ CACHE_RE = re.compile(
     r"(?:cpu\d+->)?(?P<cache>[A-Za-z0-9_]+)\s+"
     r"(?P<kind>TOTAL|LOAD|RFO|PREFETCH|WRITE|TRANSLATION)\s+"
     r"ACCESS:\s+(?P<access>\d+)\s+HIT:\s+(?P<hit>\d+)\s+"
-    r"MISS:\s+(?P<miss>\d+)\s+MISS_MERGE:\s+(?P<miss_merge>\d+)"
+    r"MISS:\s+(?P<miss>\d+)\s+(?:MISS_MERGE|MSHR_MERGE):\s+(?P<miss_merge>\d+)"
 )
+FDIP_BREAKDOWN_RE = re.compile(r"^(?P<label>L1I .+?)\s*:\s*(?P<count>\d+)")
+
+FDIP_LABELS = {
+    "L1I Hit (FDIP Covered)": "fdip_l1i_hit_covered",
+    "L1I Hit (Non-Prefetch)": "fdip_l1i_hit_non_prefetch",
+    "L1I Late Prefetch (Merge)": "fdip_l1i_late_prefetch_merge",
+    "L1I Merge (Non-Prefetch)": "fdip_l1i_merge_non_prefetch",
+    "L1I Miss": "fdip_l1i_miss",
+}
 
 
 FIELDNAMES = [
@@ -57,6 +66,14 @@ FIELDNAMES = [
     "llc_rfo_miss",
     "stlb_total_access",
     "stlb_total_miss",
+    "fdip_l1i_hit_covered",
+    "fdip_l1i_hit_non_prefetch",
+    "fdip_l1i_late_prefetch_merge",
+    "fdip_l1i_merge_non_prefetch",
+    "fdip_l1i_miss",
+    "fdip_l1i_total",
+    "fdip_l1i_covered_pct",
+    "fdip_l1i_miss_pct",
 ]
 
 
@@ -78,11 +95,24 @@ def mpki(misses, instructions):
     return misses / instructions * 1000
 
 
+def pct(part, total):
+    if not total:
+        return ""
+    return part / total * 100
+
+
 def read_config_signature(run_dir):
-    signature_file = run_dir / "config_signature.txt"
-    if signature_file.exists():
-        return signature_file.read_text(encoding="utf-8").strip()
+    for directory in (run_dir, *run_dir.parents):
+        signature_file = directory / "config_signature.txt"
+        if signature_file.exists():
+            return signature_file.read_text(encoding="utf-8").strip()
     return "unknown"
+
+
+def get_run_id(run_dir):
+    if run_dir.parent.name == "raw" and run_dir.name.startswith("fdip_"):
+        return run_dir.parent.parent.name
+    return run_dir.name
 
 
 def parse_log_path(run_dir, log_path, default_config):
@@ -102,7 +132,7 @@ def parse_log_path(run_dir, log_path, default_config):
         trace = trace[:-4]
 
     return {
-        "run_id": run_dir.name,
+        "run_id": get_run_id(run_dir),
         "config": config,
         "trace_set": trace_set,
         "trace_group": trace_group,
@@ -132,8 +162,11 @@ def parse_log(run_dir, log_path, default_config):
         row["status"] = "incomplete"
 
     cache_stats = {}
+    fdip_stats = {}
+    in_fdip_breakdown = False
 
     for line in text.splitlines():
+        stripped = line.strip()
         ipc_match = IPC_RE.search(line)
         if ipc_match:
             row["ipc"] = ipc_match.group("ipc")
@@ -157,6 +190,21 @@ def parse_log(run_dir, log_path, default_config):
                 "miss": int(cache_match.group("miss")),
                 "miss_merge": int(cache_match.group("miss_merge")),
             }
+
+        if stripped == "==== L1I Demand Access Breakdown ====":
+            in_fdip_breakdown = True
+            continue
+
+        if in_fdip_breakdown:
+            fdip_match = FDIP_BREAKDOWN_RE.search(stripped)
+            if fdip_match:
+                field = FDIP_LABELS.get(fdip_match.group("label"))
+                if field:
+                    fdip_stats[field] = int(fdip_match.group("count"))
+                continue
+
+            if "Sum of Components" in stripped or stripped == "":
+                in_fdip_breakdown = False
 
     instructions = int(row["instructions"]) if row["instructions"] else 0
 
@@ -182,6 +230,15 @@ def parse_log(run_dir, log_path, default_config):
     row["stlb_total_access"] = stlb_total.get("access", "")
     row["stlb_total_miss"] = stlb_total.get("miss", "")
     row["stlb_mpki"] = mpki(stlb_total.get("miss", 0), instructions)
+
+    for field in FDIP_LABELS.values():
+        row[field] = fdip_stats.get(field, "")
+
+    fdip_total = sum(fdip_stats.get(field, 0) for field in FDIP_LABELS.values())
+    if fdip_total:
+        row["fdip_l1i_total"] = fdip_total
+        row["fdip_l1i_covered_pct"] = pct(fdip_stats.get("fdip_l1i_hit_covered", 0), fdip_total)
+        row["fdip_l1i_miss_pct"] = pct(fdip_stats.get("fdip_l1i_miss", 0), fdip_total)
 
     if row["status"] == "ok" and not row["ipc"]:
         row["status"] = "incomplete"
@@ -209,6 +266,9 @@ def main():
 
     default_config = read_config_signature(run_dir)
     rows = [parse_log(run_dir, path, default_config) for path in iter_logs(run_dir)]
+
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
     output = open(args.output, "w", newline="", encoding="utf-8") if args.output else sys.stdout
     try:

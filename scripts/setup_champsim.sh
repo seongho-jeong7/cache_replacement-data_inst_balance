@@ -2,11 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHAMPSIM_DIR="${REPO_ROOT}/ChampSim"
-
-cd "${REPO_ROOT}"
-git submodule update --init
+CHAMPSIM_DIR="${REPO_ROOT}/ChampSim_FDIP"
 
 cd "${CHAMPSIM_DIR}"
+git submodule update --init
 vcpkg/bootstrap-vcpkg.sh
 vcpkg/vcpkg install

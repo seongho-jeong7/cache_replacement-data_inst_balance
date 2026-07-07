@@ -20,8 +20,13 @@ exclude_patterns = [
     ".git",
     ".venv",
     "ChampSim",
+    "ChampSim_DPC4",
+    "ChampSim_FDIP",
+    "ChampSim_FDIP_dirty",
+    "ChampSim_FDIP_ideal",
     "README.md",
     "html",
+    "outputs",
     "traces",
 ]
 
