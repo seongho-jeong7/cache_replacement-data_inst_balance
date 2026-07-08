@@ -24,6 +24,7 @@ exclude_patterns = [
     "ChampSim_FDIP",
     "ChampSim_FDIP_dirty",
     "ChampSim_FDIP_ideal",
+    "ChampSim_FDIP_new",
     "README.md",
     "html",
     "outputs",
@@ -35,4 +36,5 @@ html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,
 }
-html_static_path = []
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]

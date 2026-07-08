@@ -19,7 +19,7 @@ if [ -z "${PYTHON_BIN:-}" ]; then
 fi
 export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/matplotlib-${USER:-user}}"
 mkdir -p "${MPLCONFIGDIR}"
-CHAMPSIM_DIR="${REPO_ROOT}/ChampSim_FDIP"
+CHAMPSIM_DIR="${REPO_ROOT}/ChampSim_FDIP_new"
 CONFIG_FILE="${CHAMPSIM_DIR}/champsim_config.json"
 TRACES_ROOT="${REPO_ROOT}/traces"
 OUTPUT_DIR="${REPO_ROOT}/outputs"
@@ -31,18 +31,23 @@ FTQ_SIZE="${DEFAULT_FTQ_SIZE}"
 FTQ_SIZES=("${FTQ_SIZE}")
 FTQ_SIZE_OPTION_GIVEN="N"
 RUN_ID_OPTION_GIVEN="N"
+BASE_CONFIG_SIGNATURE=""
+CONFIG_SIGNATURE=""
 
-if [ ! -d "${CHAMPSIM_DIR}" ]; then
-    echo "ChampSim directory not found: ${CHAMPSIM_DIR}"
-    exit 1
-fi
+# Only needed when actually building/running against CHAMPSIM_DIR (i.e. not -s-only
+# invocations), so -s can work even if CHAMPSIM_DIR doesn't exist right now.
+check_champsim_dir() {
+    if [ ! -d "${CHAMPSIM_DIR}" ]; then
+        echo "ChampSim directory not found: ${CHAMPSIM_DIR}"
+        exit 1
+    fi
 
-if [ ! -f "${CONFIG_FILE}" ]; then
-    echo "Config file not found: ${CONFIG_FILE}"
-    exit 1
-fi
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        echo "Config file not found: ${CONFIG_FILE}"
+        exit 1
+    fi
 
-BASE_CONFIG_SIGNATURE="$("${PYTHON_BIN}" - "${CONFIG_FILE}" <<'PY'
+    BASE_CONFIG_SIGNATURE="$("${PYTHON_BIN}" - "${CONFIG_FILE}" <<'PY'
 import json
 import re
 import sys
@@ -67,11 +72,13 @@ signature = "-".join(str(part) for part in parts)
 print(re.sub(r"[^A-Za-z0-9_.-]+", "_", signature))
 PY
 )"
-if [ "${#FTQ_SIZES[@]}" -gt 1 ]; then
-    CONFIG_SIGNATURE="${BASE_CONFIG_SIGNATURE}-ftqall"
-else
-    CONFIG_SIGNATURE="${BASE_CONFIG_SIGNATURE}-ftq${FTQ_SIZES[0]}"
-fi
+    if [ "${#FTQ_SIZES[@]}" -gt 1 ]; then
+        CONFIG_SIGNATURE="${BASE_CONFIG_SIGNATURE}-ftqall"
+    else
+        CONFIG_SIGNATURE="${BASE_CONFIG_SIGNATURE}-ftq${FTQ_SIZES[0]}"
+    fi
+}
+
 RUN_ID="$(date +%y%m%d_%H%M)"
 RUN_OUTPUT_DIR="${OUTPUT_DIR}/${RUN_ID}"
 RUN_LOG="${RUN_OUTPUT_DIR}/run.log"
@@ -101,7 +108,7 @@ print_help() {
     echo " -T [file]: trace list file under ${TRACES_ROOT} to run (one path per line, relative to ${TRACES_ROOT}). Default: ${DEFAULT_TRACE_LIST}"
     echo " -b: configure and build ChampSim"
     echo " -t: run traces"
-    echo " -s [mask]: generate summary for the selected -f value. mask is a bitmask (1=summary table, 2=fdip cover, 4=hit map; e.g. 7=all, 3=summary+cover). Unknown higher bits are ignored"
+    echo " -s [mask]: generate summary for the selected -f value. mask is a decimal or 0x-prefixed hex bitmask (1=summary table [MPKIs], 2=fdip cover, 4=hit map, 8=minimal summary table [Trace Set/Group/Total/OK/Fail/Avg IPC/L1I MPKI/L1D MPKI only], 0x10=fdip summary table [Trace Set/Group/Total/OK/Fail/FDIP Cov/L1I Miss only]; e.g. 7=1+2+4, -s 0x10). Unknown higher bits are ignored"
     echo ""
     echo "Defaults:"
     echo " champsim dir: ${CHAMPSIM_DIR}"
@@ -182,6 +189,10 @@ done
 # Body
 ################################################################################
 
+if [ "${SUMMARY}" != "Y" ]; then
+    check_champsim_dir
+fi
+
 if ! [[ "${NUM_THREAD}" =~ ^[1-9][0-9]*$ ]]; then
     echo "Invalid thread count: ${NUM_THREAD}"
     exit 1
@@ -210,15 +221,17 @@ if [ ! -f "${TRACES_ROOT}/${TRACE_LIST}" ]; then
 fi
 
 if [ "${SUMMARY}" = "Y" ]; then
-    if ! [[ "${SUMMARY_MASK}" =~ ^[0-9]+$ ]] || [ "${SUMMARY_MASK}" -eq 0 ]; then
+    if ! [[ "${SUMMARY_MASK}" =~ ^(0[xX][0-9a-fA-F]+|[0-9]+)$ ]] || [ "$(( SUMMARY_MASK ))" -eq 0 ]; then
         echo "Invalid summary mask: ${SUMMARY_MASK}"
-        echo "Use -s <mask> where mask is a bitmask: 1=summary table, 2=fdip cover, 4=hit map (e.g. -s 7 for all, -s 3 for summary+cover). Bits above 4 are ignored."
+        echo "Use -s <mask> where mask is a decimal or 0x-prefixed hex bitmask: 1=summary table, 2=fdip cover, 4=hit map, 8=minimal summary table (Trace Set/Group/Total/OK/Fail/Avg IPC/L1I MPKI/L1D MPKI only), 0x10=fdip summary table (Trace Set/Group/Total/OK/Fail/FDIP Cov/L1I Miss only) (e.g. -s 7 for 1+2+4, -s 0x10 for fdip table). Bits above 0x10 are ignored."
         exit 1
     fi
     do_summary_table=$(( SUMMARY_MASK & 1 ))
     do_cover=$(( SUMMARY_MASK & 2 ))
     do_hitmap=$(( SUMMARY_MASK & 4 ))
-    echo "Summary mask: ${SUMMARY_MASK} (summary table: $([ "${do_summary_table}" -ne 0 ] && echo on || echo off), fdip cover: $([ "${do_cover}" -ne 0 ] && echo on || echo off), hit map: $([ "${do_hitmap}" -ne 0 ] && echo on || echo off))"
+    do_minimal_table=$(( SUMMARY_MASK & 8 ))
+    do_fdip_table=$(( SUMMARY_MASK & 0x10 ))
+    echo "Summary mask: ${SUMMARY_MASK} (summary table: $([ "${do_summary_table}" -ne 0 ] && echo on || echo off), fdip cover: $([ "${do_cover}" -ne 0 ] && echo on || echo off), hit map: $([ "${do_hitmap}" -ne 0 ] && echo on || echo off), minimal summary table: $([ "${do_minimal_table}" -ne 0 ] && echo on || echo off), fdip summary table: $([ "${do_fdip_table}" -ne 0 ] && echo on || echo off))"
 fi
 
 if ! [[ "${FTQ_SIZE}" =~ ^[0-9]+$ ]]; then
@@ -275,7 +288,7 @@ if [ "${SUMMARY}" = "Y" ]; then
             echo "Raw output directory not found: ${latest_raw}"
             exit 1
         fi
-        if [ "${do_summary_table}" -ne 0 ]; then
+        if [ "${do_summary_table}" -ne 0 ] || [ "${do_minimal_table}" -ne 0 ] || [ "${do_fdip_table}" -ne 0 ]; then
             if [ ! -f "${latest_metrics}" ]; then
                 echo "Generating missing metrics: ${latest_metrics}"
                 "${PYTHON_BIN}" "${REPO_ROOT}/parser/parse_outputs.py" "${latest_raw}" -o "${latest_metrics}"
@@ -304,12 +317,20 @@ if [ "${SUMMARY}" = "Y" ]; then
             done
         fi
 
-        if [ "${do_summary_table}" -ne 0 ]; then
+        if [ "${do_summary_table}" -ne 0 ] || [ "${do_minimal_table}" -ne 0 ] || [ "${do_fdip_table}" -ne 0 ]; then
             if [ "${#SUMMARY_FTQ_SIZES[@]}" -gt 1 ]; then
                 echo ""
                 echo "FDIP ftq_size=${ftq_size}"
             fi
+        fi
+        if [ "${do_summary_table}" -ne 0 ]; then
             "${PYTHON_BIN}" "${REPO_ROOT}/parser/summary.py" "${latest_metrics}"
+        fi
+        if [ "${do_minimal_table}" -ne 0 ]; then
+            "${PYTHON_BIN}" "${REPO_ROOT}/parser/summary.py" "${latest_metrics}" --minimal
+        fi
+        if [ "${do_fdip_table}" -ne 0 ]; then
+            "${PYTHON_BIN}" "${REPO_ROOT}/parser/summary.py" "${latest_metrics}" --fdip
         fi
     done
 

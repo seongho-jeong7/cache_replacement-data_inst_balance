@@ -8,10 +8,16 @@ from pathlib import Path
 METRICS = [
     "ipc",
     "branch_mpki",
+    "l1i_mpki",
     "l1d_mpki",
+    "l2i_mpki",
+    "l2d_mpki",
     "l2c_mpki",
     "llc_mpki",
+    "lli_mpki",
+    "lld_mpki",
     "stlb_mpki",
+    "on_chip_traffic_mpki",
     "off_chip_traffic_mpki",
     "fdip_l1i_covered_pct",
     "fdip_l1i_miss_pct",
@@ -51,23 +57,24 @@ def summarize(rows):
     return grouped
 
 
-def print_table(metrics_csv):
+def print_table(metrics_csv, mode="full"):
     rows = load_rows(metrics_csv)
     grouped = summarize(rows)
     ok_total = sum(1 for row in rows if row.get("status") == "ok")
     fail_total = len(rows) - ok_total
-    has_fdip = any(row.get("fdip_l1i_total") for row in rows)
-    width = 134 if has_fdip else 112
+
+    header = "| Trace Set  | Group      | Total | OK  | Fail |"
+    if mode == "minimal":
+        header += " Avg IPC | L1I MPKI | L1D MPKI | L2I MPKI | L2D MPKI | LLI MPKI | LLD MPKI |"
+    elif mode == "fdip":
+        header += " FDIP Cov | L1I Miss | OnChip MPKI | OffChip MPKI |"
+    else:
+        header += " Avg IPC | Br MPKI | L1I MPKI | L1D MPKI | L2C MPKI | LLC MPKI | STLB MPKI |"
+    width = len(header)
 
     print(f"ChampSim Summary: {metrics_csv}")
     print(f"Traces: {len(rows)} total, {ok_total} ok, {fail_total} failed")
     print("-" * width)
-    header = (
-        "| Trace Set  | Group      | Total | OK  | Fail |"
-        " Avg IPC | Br MPKI | L1D MPKI | L2C MPKI | LLC MPKI | STLB MPKI | OffChip |"
-    )
-    if has_fdip:
-        header += " FDIP Cov | L1I Miss |"
     print(header)
     print("-" * width)
 
@@ -79,23 +86,36 @@ def print_table(metrics_csv):
         }
         print(
             f"| {trace_set[:10]:<10} | {trace_group[:10]:<10} |"
-            f" {len(group_rows):5d} | {len(ok_rows):3d} | {len(group_rows) - len(ok_rows):4d} |"
-            f"{fmt(values['ipc'], 8, 3)} |"
-            f"{fmt(values['branch_mpki'], 8, 2)} |"
-            f"{fmt(values['l1d_mpki'], 9, 2)} |"
-            f"{fmt(values['l2c_mpki'], 9, 2)} |"
-            f"{fmt(values['llc_mpki'], 9, 2)} |"
-            f"{fmt(values['stlb_mpki'], 9, 2)} |"
-            f"{fmt(values['off_chip_traffic_mpki'], 8, 2)} |",
+            f" {len(group_rows):5d} | {len(ok_rows):3d} | {len(group_rows) - len(ok_rows):4d} |",
             end="",
         )
-        if has_fdip:
+        if mode == "minimal":
+            print(
+                f"{fmt(values['ipc'], 8, 3)} |"
+                f"{fmt(values['l1i_mpki'], 9, 2)} |"
+                f"{fmt(values['l1d_mpki'], 9, 2)} |"
+                f"{fmt(values['l2i_mpki'], 9, 2)} |"
+                f"{fmt(values['l2d_mpki'], 9, 2)} |"
+                f"{fmt(values['lli_mpki'], 9, 2)} |"
+                f"{fmt(values['lld_mpki'], 9, 2)} |"
+            )
+        elif mode == "fdip":
             print(
                 f"{fmt(values['fdip_l1i_covered_pct'], 9, 2)} |"
-                f"{fmt(values['fdip_l1i_miss_pct'], 8, 2)} |",
-                end="",
+                f"{fmt(values['fdip_l1i_miss_pct'], 8, 2)} |"
+                f"{fmt(values['on_chip_traffic_mpki'], 12, 2)} |"
+                f"{fmt(values['off_chip_traffic_mpki'], 13, 2)} |"
             )
-        print()
+        else:
+            print(
+                f"{fmt(values['ipc'], 8, 3)} |"
+                f"{fmt(values['branch_mpki'], 8, 2)} |"
+                f"{fmt(values['l1i_mpki'], 9, 2)} |"
+                f"{fmt(values['l1d_mpki'], 9, 2)} |"
+                f"{fmt(values['l2c_mpki'], 9, 2)} |"
+                f"{fmt(values['llc_mpki'], 9, 2)} |"
+                f"{fmt(values['stlb_mpki'], 9, 2)} |"
+            )
 
     print("-" * width)
 
@@ -103,13 +123,25 @@ def print_table(metrics_csv):
 def main():
     parser = argparse.ArgumentParser(description="Print a summary table from metrics.csv.")
     parser.add_argument("metrics_csv", help="Path to metrics.csv")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--minimal",
+        action="store_true",
+        help="Print only Trace Set/Group/Total/OK/Fail/Avg IPC/L1I MPKI/L1D MPKI columns.",
+    )
+    mode_group.add_argument(
+        "--fdip",
+        action="store_true",
+        help="Print only Trace Set/Group/Total/OK/Fail/FDIP Cov/L1I Miss columns.",
+    )
     args = parser.parse_args()
 
     metrics_csv = Path(args.metrics_csv)
     if not metrics_csv.is_file():
         raise SystemExit(f"metrics.csv not found: {metrics_csv}")
 
-    print_table(metrics_csv)
+    mode = "minimal" if args.minimal else "fdip" if args.fdip else "full"
+    print_table(metrics_csv, mode=mode)
 
 
 if __name__ == "__main__":

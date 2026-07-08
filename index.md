@@ -18,7 +18,7 @@ scripts/run.sh -s 7
 - `scripts/run.sh -f 0 -t`: FDIP를 끄고 실행한다. `-f`는 FTQ size이며 0이면 FDIP off, 0보다 크면 FDIP on이다.
 - `scripts/run.sh -f a -t`: FTQ size `2, 4, 16, 32, 64`를 같은 run 안에서 실행한다.
 - `scripts/run.sh -T trace_gtrace_yankee.txt -t`: `traces/trace_gtrace_yankee.txt`에 적힌 trace만 골라서 실행한다.
-- `scripts/run.sh -f 16 -s 7`: 최신 run의 `fdip_16` summary(metrics 표 + FDIP cover + hit map)를 전부 생성한다. `-s`는 비트마스크 필수 인자다(`1`=summary table, `2`=FDIP cover, `4`=hit map).
+- `scripts/run.sh -f 16 -s 7`: 최신 run의 `fdip_16` summary(metrics 표 + FDIP cover + hit map)를 전부 생성한다. `-s`는 비트마스크 필수 인자다(`1`=summary table, `2`=FDIP cover, `4`=hit map, `8`=축소 table, `0x10`=FDIP table — 10진수/16진수 둘 다 가능, 자세한 내용은 `docs/champsim_summary_analysis.md` 참고).
 
 자세한 실험 환경과 결과 구조는 `docs/experiment_environment.md`에 정리한다.
 
@@ -29,6 +29,8 @@ scripts/run.sh -s 7
 docs/overview
 docs/experiment_environment
 docs/champsim_fdip_diff
+docs/champsim_log_analysis
+docs/champsim_summary_analysis
 ```
 
 ```{toctree}
@@ -37,4 +39,5 @@ docs/champsim_fdip_diff
 
 daily/2026-07-06
 daily/2026-07-07
+daily/2026-07-08
 ```

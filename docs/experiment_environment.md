@@ -97,7 +97,7 @@ scripts/run.sh -s 4
 - `-i <num>`: simulation instructions 수를 지정한다. 기본값은 100000이다.
 - `-r <id>`: run id를 지정한다. 기본값은 실행 시점의 타임스탬프(`YYMMDD_HHMM`)다. 이미 존재하는 run id를 다시 지정하면 `run.log`를 덮어쓰지 않고 이어서 기록한다. `-s`와 같이 쓰면 `-s`도 최신 run 대신 이 run id를 대상으로 한다.
 - `-T <file>`: 실행할 trace 목록 파일을 지정한다. `traces/` 바로 아래에 있는 파일명만 받는다(예: `-T trace_gtrace_yankee.txt` → 실제로는 `traces/trace_gtrace_yankee.txt`를 읽음). 생략하면 기본값 `trace_gtrace_v2_all.txt`를 사용한다. 파일은 한 줄에 하나씩, `traces/` 기준 상대경로로 trace를 적는다(예: `gtrace_v2/yankee/yankee_0035.champsim.gz`).
-- `-s <mask>`: 선택된 run(`-r` 지정 시 해당 run, 아니면 `outputs/` 아래 가장 최신 run)에서 선택된 `-f` 값의 summary를 생성한다. `mask`는 비트마스크 필수 인자다 — `1`=summary table(`metrics.csv`+표), `2`=FDIP cover, `4`=hit map. 여러 개를 합치려면 더하면 된다(`3`=summary+cover, `7`=전부). 정의되지 않은 상위 비트는 무시한다(`15`를 줘도 `7`과 동일). 값을 생략하거나 잘못 주면(`0`, 숫자가 아닌 값 등) 에러와 함께 비트 의미를 다시 안내한다. `-f a -s 7`은 `fdip_2`, `fdip_4`, `fdip_16`, `fdip_32`, `fdip_64` summary를 차례대로 생성/출력한다.
+- `-s <mask>`: 선택된 run(`-r` 지정 시 해당 run, 아니면 `outputs/` 아래 가장 최신 run)에서 선택된 `-f` 값의 summary를 생성한다. `mask`는 비트마스크 필수 인자로, 10진수 또는 `0x` 붙인 16진수 둘 다 받는다(`-s 16`과 `-s 0x10`은 동일) — `1`=summary table(모든 MPKI), `2`=FDIP cover, `4`=hit map, `8`=축소 summary table(Trace Set/Group/Total/OK/Fail/Avg IPC/L1I MPKI/L1D MPKI만), `0x10`=FDIP table(FDIP Cov/L1I Miss만). 여러 개를 합치려면 더하면 된다(`3`=summary+cover, `0x19`=summary+축소+FDIP). 정의되지 않은 상위 비트는 무시한다. 값을 생략하거나 잘못 주면(`0`, 숫자가 아닌 값 등) 에러와 함께 비트 의미를 다시 안내한다. 각 표의 정확한 컬럼 구성과 MPKI/FDIP Cov/L1I Miss 계산식은 [`docs/champsim_summary_analysis.md`](champsim_summary_analysis.md)에 정리했다.
 
 `-b`를 주지 않으면 config 설정과 build는 생략한다. `-t`를 주지 않으면 trace 실행은 생략한다.
 

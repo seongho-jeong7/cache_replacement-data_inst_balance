@@ -16,7 +16,7 @@ BRANCH_RE = re.compile(
 )
 CACHE_RE = re.compile(
     r"(?:cpu\d+->)?(?P<cache>[A-Za-z0-9_]+)\s+"
-    r"(?P<kind>TOTAL|LOAD|RFO|PREFETCH|WRITE|TRANSLATION)\s+"
+    r"(?P<kind>TOTAL|LOAD|RFO|PREFETCH|WRITE|TRANSLATION)(?P<origin>_I|_D)?\s+"
     r"ACCESS:\s+(?P<access>\d+)\s+HIT:\s+(?P<hit>\d+)\s+"
     r"MISS:\s+(?P<miss>\d+)\s+(?:MISS_MERGE|MSHR_MERGE):\s+(?P<miss_merge>\d+)"
 )
@@ -44,12 +44,21 @@ FIELDNAMES = [
     "cycles",
     "branch_accuracy",
     "branch_mpki",
+    "l1i_mpki",
     "l1d_mpki",
     "l2c_mpki",
+    "l2i_mpki",
+    "l2d_mpki",
     "llc_mpki",
+    "lli_mpki",
+    "lld_mpki",
     "stlb_mpki",
     "on_chip_traffic_mpki",
     "off_chip_traffic_mpki",
+    "l1i_load_access",
+    "l1i_load_miss",
+    "l1i_rfo_access",
+    "l1i_rfo_miss",
     "l1d_load_access",
     "l1d_load_miss",
     "l1d_rfo_access",
@@ -184,6 +193,9 @@ def parse_log(run_dir, log_path, default_config):
         if cache_match:
             cache = normalize_cache_name(cache_match.group("cache"))
             kind = cache_match.group("kind").lower()
+            origin = cache_match.group("origin")
+            if origin:
+                kind += origin.lower()
             cache_stats[(cache, kind)] = {
                 "access": int(cache_match.group("access")),
                 "hit": int(cache_match.group("hit")),
@@ -208,7 +220,7 @@ def parse_log(run_dir, log_path, default_config):
 
     instructions = int(row["instructions"]) if row["instructions"] else 0
 
-    for cache in ("L1D", "L2C", "LLC"):
+    for cache in ("L1I", "L1D", "L2C", "LLC"):
         cache_key = cache.lower()
         load = cache_stats.get((cache, "load"), {})
         rfo = cache_stats.get((cache, "rfo"), {})
@@ -219,6 +231,23 @@ def parse_log(run_dir, log_path, default_config):
         row[f"{cache_key}_rfo_access"] = rfo.get("access", "")
         row[f"{cache_key}_rfo_miss"] = rfo.get("miss", "")
         row[f"{cache_key}_mpki"] = mpki(total_misses, instructions)
+
+    # Origin-split (instruction-fetch vs data) demand MPKI at L2C/LLC, from the
+    # ChampSim_FDIP is_instr_fetch instrumentation. Only present in logs built
+    # with that instrumentation; left blank ("") for older logs.
+    split_fields = {
+        "L2C": {"i": "l2i_mpki", "d": "l2d_mpki"},
+        "LLC": {"i": "lli_mpki", "d": "lld_mpki"},
+    }
+    for cache, fields in split_fields.items():
+        for origin, field in fields.items():
+            load = cache_stats.get((cache, f"load_{origin}"))
+            rfo = cache_stats.get((cache, f"rfo_{origin}"))
+            if load is None and rfo is None:
+                row[field] = ""
+            else:
+                misses = (load or {}).get("miss", 0) + (rfo or {}).get("miss", 0)
+                row[field] = mpki(misses, instructions)
 
     llc_total = cache_stats.get(("LLC", "total"), {})
     row["llc_total_access"] = llc_total.get("access", "")
