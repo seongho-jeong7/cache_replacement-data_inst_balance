@@ -2,6 +2,13 @@
 html/
 __pycache__/
 parser/__pycache__/
-traces/
+traces/*
+!traces/*.txt
+!traces/Graph/
+traces/Graph/*
+!traces/Graph/.gitkeep
+!traces/gtrace_v2/
+traces/gtrace_v2/*
+!traces/gtrace_v2/.gitkeep
 outputs/*
 !outputs/.gitkeep

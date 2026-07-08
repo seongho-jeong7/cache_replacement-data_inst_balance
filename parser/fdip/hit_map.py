@@ -324,12 +324,17 @@ def main():
     parser.add_argument('inputs', nargs='+', help='List of files, directories, or a ranking file + search dir')
     parser.add_argument('--separate', action='store_true', help='Generate separate reports for each file')
     parser.add_argument('--top', type=int, help='Only aggregate the top N files (requires ranking file or will just take first N found)')
-    
+    parser.add_argument('-o', '--name', help='Output filename stem (overrides the auto-derived name)')
+    parser.add_argument('--output-dir', help='Directory to write PNG/TXT reports. Defaults to ./hit_map next to this script.')
+    parser.add_argument('--quiet', action='store_true', help='Do not print every processed log file.')
+
     args = parser.parse_args()
-    
+
     files_to_process = [] # list of (fullpath, filename)
-    base_output_dir = os.path.expanduser('~/melong/champsim_replay/script/hit_map')
-    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base_output_dir = args.output_dir if args.output_dir else os.path.join(script_dir, 'hit_map')
+    os.makedirs(base_output_dir, exist_ok=True)
+
     input_basename = "aggregated_results"
     
     if len(args.inputs) > 1:
@@ -384,7 +389,8 @@ def main():
              
     else:
         # Normal scan of all inputs
-        print("Scanning inputs...")
+        if not args.quiet:
+            print("Scanning inputs...")
         for inp in args.inputs:
             for full_path, filename in get_files_from_path(inp):
                 files_to_process.append((full_path, filename))
@@ -393,20 +399,25 @@ def main():
         print("No files found.")
         sys.exit(0)
 
+    if args.name:
+        input_basename = args.name
+
     # Apply Top N Filter
     if args.top is not None:
-        print(f"Filtering Top {args.top} files...")
+        if not args.quiet:
+            print(f"Filtering Top {args.top} files...")
         files_to_process = files_to_process[:args.top]
         suffix = f"{input_basename}_top{args.top}"
     else:
         suffix = input_basename
-    
+
     aggregated_data = {}
     print(f"Processing {len(files_to_process)} files...")
-    
+
     for i, (fullpath, filename) in enumerate(files_to_process):
-        print(f"  Processing ({i+1}/{len(files_to_process)}): {filename}")
-        
+        if not args.quiet:
+            print(f"  Processing ({i+1}/{len(files_to_process)}): {filename}")
+
         file_data = parse_log_file(fullpath)
         
         if file_data:

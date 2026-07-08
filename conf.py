@@ -1,4 +1,4 @@
-project = "cache_replacement-data_inst_balance"
+project = "Cache Replacement Policy 연구: L2의 Data, Instruction 크기 Balance"
 author = "cache_replacement-data_inst_balance contributors"
 copyright = "2026, cache_replacement-data_inst_balance contributors"
 
