@@ -1037,32 +1037,6 @@ shared 대비 변화:
 | 4:4 | +0.01% | +0.16 | -0.81 | -0.65 | +0.14 | +0.13 | +0.00 | +0.18 | +0.81 | -0.80 |
 | 6:2 | +0.48% | -7.31 | +2.98 | -4.33 | +0.16 | +0.21 | -0.05 | +0.14 | -2.42 | +2.35 |
 
-Trade-off scatter:
-
-![sierra.a.6 L2C I/D partition trade-off](../outputs/260713_2013_l2c_test/summary/fdip_0/l2c_id_tradeoff_scatter.png)
-
-이 그림은 shared를 원점으로 두고 각 partition의 `L2I MPKI` 변화와 `L2D MPKI` 변화를 동시에 보여준다.
-
-- x축이 왼쪽으로 갈수록 instruction-fetch 기원 L2C miss가 줄어든다.
-- y축이 아래로 갈수록 data 기원 L2C miss가 줄어든다.
-- 점의 라벨은 shared 대비 IPC 변화율이다.
-
-따라서 이 그림의 핵심은 다음처럼 읽는다.
-
-- `2:6`은 오른쪽 아래에 있다.
-  - data에는 좋다. L2D가 줄었다.
-  - 하지만 instruction에는 나쁘다. L2I가 크게 늘었다.
-  - 결과적으로 IPC가 -1.75% 떨어졌다.
-- `6:2`는 왼쪽 위에 있다.
-  - instruction에는 좋다. L2I가 크게 줄었다.
-  - data에는 나쁘다. L2D가 늘었다.
-  - 그럼에도 IPC가 +0.48% 좋아졌다.
-- `4:4`는 원점 근처에 있다.
-  - shared와 거의 같은 동작이다.
-  - IPC도 거의 변하지 않는다.
-
-즉 이 scatter는 `sierra.a.6`에서 **data miss 감소보다 instruction miss 감소가 IPC에 더 중요했다**는 메시지를 가장 직접적으로 보여준다.
-
 해석:
 
 - 긴 run에서는 짧은 100k/100k 실험과 달리 **6:2가 가장 좋은 IPC**를 보였다.

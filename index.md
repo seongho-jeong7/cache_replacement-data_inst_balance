@@ -32,6 +32,8 @@ docs/champsim_fdip_diff
 docs/champsim_log_analysis
 docs/champsim_summary_analysis
 docs/2026_07_13_experiment
+docs/2026_07_14_experiment
+docs/2026_07_14_analysis
 ```
 
 ```{toctree}
@@ -42,4 +44,5 @@ daily/2026-07-06
 daily/2026-07-07
 daily/2026-07-08
 daily/2026-07-13
+daily/2026-07-14
 ```

@@ -49,6 +49,17 @@ BACKEND_STALL_LABELS = {
     "SQ_STALL": "backend_stall_sq",
 }
 
+# ROB_STALL sub-breakdown. The ChampSim log prints Average/Total/Counts blocks;
+# metrics.csv uses the Total block because the top-level ROB/LQ/SQ stall fields
+# are also cycle counts.
+ROB_STALL_RE = re.compile(r"^(?P<label>ADDR_TRANS|REPLAY_LOAD|NON_REPLAY_LOAD):\s*(?P<count>\d+)")
+
+ROB_STALL_LABELS = {
+    "ADDR_TRANS": "rob_stall_addr_trans",
+    "REPLAY_LOAD": "rob_stall_replay_load",
+    "NON_REPLAY_LOAD": "rob_stall_non_replay_load",
+}
+
 
 FIELDNAMES = [
     "run_id",
@@ -114,6 +125,18 @@ FIELDNAMES = [
     "backend_stall_rob_pct",
     "backend_stall_lq_pct",
     "backend_stall_sq_pct",
+    "rob_stall_addr_trans",
+    "rob_stall_replay_load",
+    "rob_stall_non_replay_load",
+    "rob_stall_addr_trans_pct",
+    "rob_stall_replay_load_pct",
+    "rob_stall_non_replay_load_pct",
+    "frontend_instruction_fetch_stall",
+    "frontend_instruction_fetch_stall_pct",
+    "backend_instruction_stall",
+    "backend_instruction_stall_pct",
+    "backend_data_stall",
+    "backend_data_stall_pct",
 ]
 
 
@@ -208,6 +231,9 @@ def parse_log(run_dir, log_path, default_config):
     in_frontend_stall_breakdown = False
     backend_stall_stats = {}
     in_backend_stall_breakdown = False
+    rob_stall_stats = {}
+    in_rob_stall_breakdown = False
+    rob_stall_section = ""
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -283,6 +309,26 @@ def parse_log(run_dir, log_path, default_config):
             if stripped == "":
                 in_backend_stall_breakdown = False
 
+        if stripped == "====ROB Stall Breakdown====":
+            in_rob_stall_breakdown = True
+            rob_stall_section = ""
+            continue
+
+        if in_rob_stall_breakdown:
+            if stripped.startswith("===="):
+                in_rob_stall_breakdown = False
+                rob_stall_section = ""
+            elif stripped.startswith("==") and stripped.endswith("=="):
+                rob_stall_section = stripped.strip("= ").lower()
+                continue
+            elif rob_stall_section == "total":
+                rob_stall_match = ROB_STALL_RE.search(stripped)
+                if rob_stall_match:
+                    field = ROB_STALL_LABELS.get(rob_stall_match.group("label"))
+                    if field:
+                        rob_stall_stats[field] = int(rob_stall_match.group("count"))
+                    continue
+
     instructions = int(row["instructions"]) if row["instructions"] else 0
     cycles = int(row["cycles"]) if row["cycles"] else 0
 
@@ -336,6 +382,32 @@ def parse_log(run_dir, log_path, default_config):
     for field in BACKEND_STALL_LABELS.values():
         row[field] = backend_stall_stats.get(field, "")
         row[f"{field}_pct"] = pct(backend_stall_stats[field], cycles) if field in backend_stall_stats else ""
+
+    for field in ROB_STALL_LABELS.values():
+        row[field] = rob_stall_stats.get(field, "")
+        row[f"{field}_pct"] = pct(rob_stall_stats[field], cycles) if field in rob_stall_stats else ""
+
+    # User-facing combined stall classes for the current experiment notes.
+    frontend_instruction_fetch = frontend_stall_stats.get("frontend_stall_l1i_miss")
+    if frontend_instruction_fetch is not None:
+        row["frontend_instruction_fetch_stall"] = frontend_instruction_fetch
+        row["frontend_instruction_fetch_stall_pct"] = pct(frontend_instruction_fetch, cycles)
+
+    backend_instruction_stall_parts = [
+        backend_stall_stats.get("backend_stall_lq"),
+        backend_stall_stats.get("backend_stall_sq"),
+        rob_stall_stats.get("rob_stall_addr_trans"),
+        rob_stall_stats.get("rob_stall_replay_load"),
+    ]
+    if any(value is not None for value in backend_instruction_stall_parts):
+        backend_instruction_stall = sum(value or 0 for value in backend_instruction_stall_parts)
+        row["backend_instruction_stall"] = backend_instruction_stall
+        row["backend_instruction_stall_pct"] = pct(backend_instruction_stall, cycles)
+
+    backend_data_stall = rob_stall_stats.get("rob_stall_non_replay_load")
+    if backend_data_stall is not None:
+        row["backend_data_stall"] = backend_data_stall
+        row["backend_data_stall_pct"] = pct(backend_data_stall, cycles)
 
     fdip_total = sum(fdip_stats.get(field, 0) for field in FDIP_LABELS.values())
     if fdip_total:
