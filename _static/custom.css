@@ -2,3 +2,8 @@
 .wy-nav-content {
     max-width: 1000px !important;
 }
+
+/* Keep sidebar entries compact enough for experiment titles. */
+.wy-menu-vertical a {
+    font-size: 85%;
+}

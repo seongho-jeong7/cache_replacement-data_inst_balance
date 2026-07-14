@@ -12,7 +12,7 @@
 - `scripts/`: 환경 준비와 실험 실행 스크립트 위치
 - `outputs/`: 실험 결과 로그와 파싱 결과가 저장되는 위치
 - `parser/`: ChampSim 출력 로그를 CSV와 summary로 변환하는 파서 위치
-- `daily/`: 일별 연구 노트 작성 공간
+- `docs/daily/`: 일별 연구 노트 작성 공간
 - `docs/`: 연구 관련 문서 작성 공간
 
 ## Documentation
@@ -33,18 +33,26 @@ make html
 ChampSim 의존성 준비용 스크립트는 다음 파일이다.
 
 ```bash
-scripts/setup_champsim.sh
+scripts/setup_champsim.sh -C <champsim_dir>
 ```
 
-현재 `scripts/setup_champsim.sh`는 `ChampSim/` 디렉터리를 대상으로 submodule 초기화, vcpkg bootstrap, vcpkg install을 수행한다. `ChampSim_DPC4/` 또는 `ChampSim_FDIP/`를 대상으로 준비 작업을 할 때는 각 디렉터리의 구성에 맞게 별도로 확인해야 한다.
-
-실험 실행 스크립트는 루트 `config/` 폴더의 복사본이 아니라, `CHAMPSIM_DIR/champsim_config.json`을 직접 사용한다.
+`-C`는 필수다. setup 대상 ChampSim 디렉터리를 명시적으로 지정해야 한다.
 
 ```bash
-git submodule update --init
-vcpkg/bootstrap-vcpkg.sh
-vcpkg/vcpkg install
+scripts/setup_champsim.sh -C ChampSim
+scripts/setup_champsim.sh -C ChampSim_FDIP
+scripts/setup_champsim.sh -C ChampSim_FDIP_ideal
+scripts/setup_champsim.sh -C ChampSim_FDIP_dirty
 ```
+
+동작은 다음과 같다.
+
+- 선택한 ChampSim 디렉터리에서 `git submodule update --init`을 실행한다.
+- 선택한 디렉터리에 `vcpkg/`가 있으면 그 vcpkg를 직접 사용한다.
+- 선택한 디렉터리에 `vcpkg/`가 없으면 `ChampSim/vcpkg`를 먼저 준비하고, 선택한 디렉터리의 `vcpkg`로 symbolic link를 만든다.
+- 마지막으로 선택한 디렉터리에서 `vcpkg/vcpkg install`을 실행해 해당 디렉터리의 `vcpkg.json` manifest를 기준으로 dependency를 설치한다.
+
+실험 실행 스크립트는 루트 `config/` 폴더의 복사본이 아니라, `CHAMPSIM_DIR/champsim_config.json`을 직접 사용한다.
 
 ## Run Script
 

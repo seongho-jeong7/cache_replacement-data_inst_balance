@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot the Trace-FTQ-L2C hierarchical delta table (docs/2026_07_14_experiment.md,
+"""Plot the Trace-FTQ-L2C hierarchical delta table (docs/exp/2026_07_14_experiment.md,
 "Trace-FTQ-L2C 계층별 전체 변화량 표") as a small-multiples grid.
 
 Each column is a trace group, each row is one delta metric from that table

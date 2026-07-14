@@ -241,7 +241,7 @@ root repository에는 오늘 실험/분석을 위한 변경이 남아 있다.
  M scripts/run.sh
  D traces/trace_gtrace_sierra.a.4_err.txt
  D traces/trace_gtrace_yankee_err.txt
-?? docs/2026_07_13_experiment.md
+?? docs/exp/2026_07_13_experiment.md
 ?? traces/trace_260707_2245_retry_21.txt
 ```
 
