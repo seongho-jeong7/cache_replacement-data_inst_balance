@@ -21,6 +21,9 @@ METRICS = [
     "off_chip_traffic_mpki",
     "fdip_l1i_covered_pct",
     "fdip_l1i_miss_pct",
+    "frontend_stall_l1i_miss_pct",
+    "frontend_stall_no_instr_to_fetch_pct",
+    "frontend_stall_backend_full_pct",
 ]
 
 
@@ -68,6 +71,8 @@ def print_table(metrics_csv, mode="full"):
         header += " Avg IPC | L1I MPKI | L1D MPKI | L2I MPKI | L2D MPKI | LLI MPKI | LLD MPKI |"
     elif mode == "fdip":
         header += " FDIP Cov | L1I Miss | OnChip MPKI | OffChip MPKI |"
+    elif mode == "frontend":
+        header += " Avg IPC | L1I MPKI | L2I MPKI | L2D MPKI | L1I Stall% | NoFetch% | BackendFull% |"
     else:
         header += " Avg IPC | Br MPKI | L1I MPKI | L1D MPKI | L2C MPKI | LLC MPKI | STLB MPKI |"
     width = len(header)
@@ -106,6 +111,16 @@ def print_table(metrics_csv, mode="full"):
                 f"{fmt(values['on_chip_traffic_mpki'], 12, 2)} |"
                 f"{fmt(values['off_chip_traffic_mpki'], 13, 2)} |"
             )
+        elif mode == "frontend":
+            print(
+                f"{fmt(values['ipc'], 8, 3)} |"
+                f"{fmt(values['l1i_mpki'], 9, 2)} |"
+                f"{fmt(values['l2i_mpki'], 9, 2)} |"
+                f"{fmt(values['l2d_mpki'], 9, 2)} |"
+                f"{fmt(values['frontend_stall_l1i_miss_pct'], 11, 2)} |"
+                f"{fmt(values['frontend_stall_no_instr_to_fetch_pct'], 9, 2)} |"
+                f"{fmt(values['frontend_stall_backend_full_pct'], 13, 2)} |"
+            )
         else:
             print(
                 f"{fmt(values['ipc'], 8, 3)} |"
@@ -134,13 +149,18 @@ def main():
         action="store_true",
         help="Print only Trace Set/Group/Total/OK/Fail/FDIP Cov/L1I Miss columns.",
     )
+    mode_group.add_argument(
+        "--frontend",
+        action="store_true",
+        help="Print only Trace Set/Group/Total/OK/Fail/Avg IPC/L1I MPKI/frontend stall breakdown (L1I Stall%%/NoFetch%%/BackendFull%%) columns.",
+    )
     args = parser.parse_args()
 
     metrics_csv = Path(args.metrics_csv)
     if not metrics_csv.is_file():
         raise SystemExit(f"metrics.csv not found: {metrics_csv}")
 
-    mode = "minimal" if args.minimal else "fdip" if args.fdip else "full"
+    mode = "minimal" if args.minimal else "fdip" if args.fdip else "frontend" if args.frontend else "full"
     print_table(metrics_csv, mode=mode)
 
 

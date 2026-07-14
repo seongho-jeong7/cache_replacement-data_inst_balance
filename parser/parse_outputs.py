@@ -30,6 +30,25 @@ FDIP_LABELS = {
     "L1I Miss": "fdip_l1i_miss",
 }
 
+FRONTEND_STALL_RE = re.compile(r"^(?P<label>L1I_MISS|NO_INSTR_TO_FETCH|BACKEND_FULL):\s*(?P<count>\d+)")
+
+FRONTEND_STALL_LABELS = {
+    "L1I_MISS": "frontend_stall_l1i_miss",
+    "NO_INSTR_TO_FETCH": "frontend_stall_no_instr_to_fetch",
+    "BACKEND_FULL": "frontend_stall_backend_full",
+}
+
+# @Minchan's pre-existing dispatch-stage stall breakdown (ROB/LQ/SQ full).
+# Distinct from FRONTEND_STALL_* above: this is the true backend (post-decode,
+# pre-execute) stall, while FRONTEND_STALL_* covers fetch->decode promotion.
+BACKEND_STALL_RE = re.compile(r"^(?P<label>ROB_STALL|LQ_STALL|SQ_STALL):\s*(?P<count>\d+)")
+
+BACKEND_STALL_LABELS = {
+    "ROB_STALL": "backend_stall_rob",
+    "LQ_STALL": "backend_stall_lq",
+    "SQ_STALL": "backend_stall_sq",
+}
+
 
 FIELDNAMES = [
     "run_id",
@@ -83,6 +102,18 @@ FIELDNAMES = [
     "fdip_l1i_total",
     "fdip_l1i_covered_pct",
     "fdip_l1i_miss_pct",
+    "frontend_stall_l1i_miss",
+    "frontend_stall_no_instr_to_fetch",
+    "frontend_stall_backend_full",
+    "frontend_stall_l1i_miss_pct",
+    "frontend_stall_no_instr_to_fetch_pct",
+    "frontend_stall_backend_full_pct",
+    "backend_stall_rob",
+    "backend_stall_lq",
+    "backend_stall_sq",
+    "backend_stall_rob_pct",
+    "backend_stall_lq_pct",
+    "backend_stall_sq_pct",
 ]
 
 
@@ -173,6 +204,10 @@ def parse_log(run_dir, log_path, default_config):
     cache_stats = {}
     fdip_stats = {}
     in_fdip_breakdown = False
+    frontend_stall_stats = {}
+    in_frontend_stall_breakdown = False
+    backend_stall_stats = {}
+    in_backend_stall_breakdown = False
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -218,7 +253,38 @@ def parse_log(run_dir, log_path, default_config):
             if "Sum of Components" in stripped or stripped == "":
                 in_fdip_breakdown = False
 
+        if stripped == "====Frontend Stall Breakdown====":
+            in_frontend_stall_breakdown = True
+            continue
+
+        if in_frontend_stall_breakdown:
+            frontend_stall_match = FRONTEND_STALL_RE.search(stripped)
+            if frontend_stall_match:
+                field = FRONTEND_STALL_LABELS.get(frontend_stall_match.group("label"))
+                if field:
+                    frontend_stall_stats[field] = int(frontend_stall_match.group("count"))
+                continue
+
+            if stripped == "":
+                in_frontend_stall_breakdown = False
+
+        if stripped == "====Backend Stall Breakdown====":
+            in_backend_stall_breakdown = True
+            continue
+
+        if in_backend_stall_breakdown:
+            backend_stall_match = BACKEND_STALL_RE.search(stripped)
+            if backend_stall_match:
+                field = BACKEND_STALL_LABELS.get(backend_stall_match.group("label"))
+                if field:
+                    backend_stall_stats[field] = int(backend_stall_match.group("count"))
+                continue
+
+            if stripped == "":
+                in_backend_stall_breakdown = False
+
     instructions = int(row["instructions"]) if row["instructions"] else 0
+    cycles = int(row["cycles"]) if row["cycles"] else 0
 
     for cache in ("L1I", "L1D", "L2C", "LLC"):
         cache_key = cache.lower()
@@ -262,6 +328,14 @@ def parse_log(run_dir, log_path, default_config):
 
     for field in FDIP_LABELS.values():
         row[field] = fdip_stats.get(field, "")
+
+    for field in FRONTEND_STALL_LABELS.values():
+        row[field] = frontend_stall_stats.get(field, "")
+        row[f"{field}_pct"] = pct(frontend_stall_stats[field], cycles) if field in frontend_stall_stats else ""
+
+    for field in BACKEND_STALL_LABELS.values():
+        row[field] = backend_stall_stats.get(field, "")
+        row[f"{field}_pct"] = pct(backend_stall_stats[field], cycles) if field in backend_stall_stats else ""
 
     fdip_total = sum(fdip_stats.get(field, 0) for field in FDIP_LABELS.values())
     if fdip_total:

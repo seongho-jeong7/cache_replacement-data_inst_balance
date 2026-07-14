@@ -1,5 +1,0 @@
-gtrace_v2/sierra.a.4/sierra.a.4_0000.champsim.gz
-gtrace_v2/sierra.a.4/sierra.a.4_0004.champsim.gz
-gtrace_v2/sierra.a.4/sierra.a.4_0007.champsim.gz
-gtrace_v2/sierra.a.4/sierra.a.4_0014.champsim.gz
-gtrace_v2/sierra.a.4/sierra.a.4_0022.champsim.gz
