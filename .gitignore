@@ -12,3 +12,4 @@ traces/gtrace_v2/*
 !traces/gtrace_v2/.gitkeep
 outputs/*
 !outputs/.gitkeep
+ChampSim_FDIP_f6602de/

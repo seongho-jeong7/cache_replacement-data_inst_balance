@@ -58,6 +58,8 @@ METRIC_SPECS = {
     "l2d_mpki": {"label": "dL2D MPKI", "kind": "abs", "axis": "mpki"},
     "backend_data_stall_pct": {"label": "dBackend Data Stall%p", "kind": "abs", "axis": "pct"},
     "l2c_mpki": {"label": "dL2C MPKI", "kind": "abs", "axis": "mpki"},
+    "lli_mpki": {"label": "dLLI MPKI", "kind": "abs", "axis": "mpki"},
+    "lld_mpki": {"label": "dLLD MPKI", "kind": "abs", "axis": "mpki"},
 }
 DEFAULT_METRICS = list(METRIC_SPECS)
 
@@ -70,21 +72,33 @@ INSTRUCTION_METRICS = ["ipc", "l1i_mpki", "l2i_mpki", "frontend_instruction_fetc
 DATA_METRICS = ["ipc", "l1d_mpki", "l2d_mpki", "backend_data_stall_pct"]
 
 # Per-metric color for the overlay plot, grouped by family so the metric's
-# *category* reads at a glance: MPKI metrics share a red ramp (light->dark,
-# l2c_mpki -- the l2i+l2d total -- gets the darkest/most saturated step),
-# stall%p metrics share a green ramp, and dIPC keeps the original blue. Each
-# ramp is light->dark in the same order the metric appears in METRIC_SPECS,
-# so adjacent steps stay distinguishable within a family.
+# *category* reads at a glance: MPKI metrics share a pastel yellow->orange
+# ramp (light->dark, l2c_mpki -- the l2i+l2d total -- gets the darkest/most
+# saturated step), kept deliberately soft/desaturated so dIPC's red/blue stay
+# the most eye-catching thing on the chart. Stall%p metrics share a green
+# ramp. Each ramp is light->dark in the same order the metric appears in
+# METRIC_SPECS, so adjacent steps stay distinguishable within a family.
+#
+# dIPC is sign-colored instead of family-colored, and kept fully saturated
+# (not pastel) since it's the headline number -- whether shared vs. this
+# policy is an IPC win or loss should read immediately, and it should win
+# the eye over the softer MPKI/stall bars. IPC_UP_COLOR (blue) is swapped in
+# per-bar when the value is positive; METRIC_STYLE["ipc"]["color"] (red) is
+# the base/negative color. The bar-top connecting line stays a neutral ink
+# so it doesn't visually merge with either sign's bars.
+IPC_UP_COLOR = "#2a78d6"
+IPC_LINE_COLOR = "#4a4a46"
+
 METRIC_STYLE = {
-    "ipc": {"color": "#2a78d6"},
-    "l1i_mpki": {"color": "#f4a9a8"},
-    "l2i_mpki": {"color": "#e57373"},
+    "ipc": {"color": "#e34948"},
+    "l1i_mpki": {"color": "#ffe9a8"},
+    "l2i_mpki": {"color": "#ffd27f"},
     "frontend_instruction_fetch_stall_pct": {"color": "#a5d6a7"},
     "backend_instruction_stall_pct": {"color": "#4caf50"},
-    "l1d_mpki": {"color": "#d32f2f"},
-    "l2d_mpki": {"color": "#b71c1c"},
+    "l1d_mpki": {"color": "#ffb877"},
+    "l2d_mpki": {"color": "#ff9d5c"},
     "backend_data_stall_pct": {"color": "#1b5e20"},
-    "l2c_mpki": {"color": "#7f0000"},
+    "l2c_mpki": {"color": "#f2814a"},
 }
 
 
@@ -174,7 +188,15 @@ def build_deltas(run_dir, ftq_sizes, policies, traces, metric_keys, kind_overrid
                     b = base_vals.get(key)
                     p = pol_vals.get(key)
                     kind = kind_overrides.get(key, METRIC_SPECS[key]["kind"])
-                    if b is None or p is None:
+                    if (key == "l2i_mpki" and policy == "0i8d") or (key == "l2d_mpki" and policy == "8i0d"):
+                        # 0i8d gives L2C zero instruction ways, and 8i0d gives
+                        # L2C zero data ways. The corresponding L2I/L2D metric
+                        # is structurally not applicable rather than a cache
+                        # improvement over shared. Define the delta as 0 so the
+                        # table/plot does not overstate a metric that stopped
+                        # applying.
+                        d = 0.0
+                    elif b is None or p is None:
                         d = None
                     elif kind == "pct":
                         d = (p / b - 1) * 100 if b else None
@@ -319,11 +341,12 @@ def plot_overlay(deltas, traces, ftq_sizes, policies, output_path, title):
                 offset = xi + (m - (n_side_metrics - 1) / 2) * bar_width
                 style = METRIC_STYLE[key]
                 axis_key = METRIC_SPECS[key]["axis"]
+                bar_color = IPC_UP_COLOR if (key == "ipc" and val is not None and val > 0) else style["color"]
                 axis_of[axis_key].bar(
                     [offset],
                     [val if val is not None else 0],
                     width=bar_width,
-                    color=style["color"],
+                    color=bar_color,
                     zorder=3,
                 )
                 if val is not None:
@@ -345,7 +368,7 @@ def plot_overlay(deltas, traces, ftq_sizes, policies, output_path, title):
                 axis_of["pct"].plot(
                     [p[0] for p in pts],
                     [p[1] for p in pts],
-                    color=METRIC_STYLE["ipc"]["color"],
+                    color=IPC_LINE_COLOR,
                     linewidth=1.3,
                     marker="o",
                     markersize=3.5,
@@ -357,7 +380,10 @@ def plot_overlay(deltas, traces, ftq_sizes, policies, output_path, title):
         pad = 1.15
         mpki_limit = (max_abs["mpki"] * pad) or 1.0
         pct_limit = (max_abs["pct"] * pad) or 1.0
-        ax.set_ylim(-mpki_limit, mpki_limit)
+        # Inverted on purpose: "up" means improvement on both axes now (fewer
+        # misses is as much a win as higher IPC), instead of up meaning
+        # opposite things on the two axes.
+        ax.set_ylim(mpki_limit, -mpki_limit)
         ax2.set_ylim(-pct_limit, pct_limit)
 
         ax.axhline(0, color="#52514e", linewidth=0.8, zorder=2)
@@ -373,22 +399,276 @@ def plot_overlay(deltas, traces, ftq_sizes, policies, output_path, title):
         ax.grid(axis="y", color="#e3e2dd", linewidth=0.6, zorder=0)
         ax.spines["top"].set_visible(False)
         ax2.spines["top"].set_visible(False)
-        ax.set_ylabel(f"{trace}\nMPKI", fontsize=9)
+        ax.set_ylabel(f"{trace}\nMPKI (↑ = better)", fontsize=9)
         ax2.set_ylabel("%", fontsize=9)
 
     axes[-1].set_xlabel("FTQ / side (data | instruction) / L2C policy", fontsize=9)
 
-    handles = [plt.Rectangle((0, 0), 1, 1, color=METRIC_STYLE[k]["color"]) for k in legend_metrics]
-    labels = [METRIC_SPECS[k]["label"] for k in legend_metrics]
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        ncol=4,
-        frameon=False,
-        bbox_to_anchor=(0.5, 1.0 + 0.6 / (2.6 * n_rows)),
-        fontsize=8,
-    )
+    # Three separate legends -- IPC / data / instruction -- instead of one
+    # flat wrapped row, so which color belongs to which category is visible
+    # at a glance rather than left to the reader to infer from row-wrapping.
+    legend_y = 1.0 + 0.6 / (2.6 * n_rows)
+    groups = [
+        (
+            "IPC",
+            [METRIC_STYLE["ipc"]["color"], IPC_UP_COLOR],
+            ["dIPC (%) ≤ 0", "dIPC (%) > 0"],
+            0.14,
+        ),
+        (
+            "Data",
+            [METRIC_STYLE[k]["color"] for k in DATA_METRICS if k != "ipc"],
+            [METRIC_SPECS[k]["label"] for k in DATA_METRICS if k != "ipc"],
+            0.46,
+        ),
+        (
+            "Instruction",
+            [METRIC_STYLE[k]["color"] for k in INSTRUCTION_METRICS if k != "ipc"],
+            [METRIC_SPECS[k]["label"] for k in INSTRUCTION_METRICS if k != "ipc"],
+            0.80,
+        ),
+    ]
+    for group_title, colors, labels, x in groups:
+        handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in colors]
+        legend = fig.legend(
+            handles,
+            labels,
+            title=group_title,
+            loc="upper center",
+            ncol=1,
+            frameon=False,
+            bbox_to_anchor=(x, legend_y),
+            fontsize=8,
+            title_fontsize=8.5,
+        )
+        legend.get_title().set_fontweight("bold")
+    fig.suptitle(title, fontsize=11, y=1.0 + 1.0 / (2.6 * n_rows))
+    fig.tight_layout(rect=(0, 0, 1, 1.0))
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# v2 of the overlay: same source data (`deltas`, from the same metrics.csv /
+# CSV outputs as the v1 plot -- nothing is re-fetched), but the 3 stall%p
+# metrics are dropped and data-side/instruction-side MPKI (now including the
+# LLC-level, origin-split lli_mpki/lld_mpki) are drawn together in one group
+# per (ftq, policy) slot instead of split into separate data/instruction
+# halves. Useful as a denser, stall-free read of just "does this policy
+# trade instruction-side MPKI for data-side MPKI (or vice versa) at each
+# cache level, and what happens to IPC."
+MERGED_METRICS = ["ipc", "l1d_mpki", "l2d_mpki", "lld_mpki", "l1i_mpki", "l2i_mpki", "lli_mpki"]
+
+# v2 uses its own family colors instead of METRIC_STYLE's pastel-orange-for-
+# all-MPKI scheme, because v1 keeps data/instruction apart by position (left
+# half vs. right half) so color doesn't need to carry that distinction --
+# but v2 merges them into one group, so color is the only thing separating
+# "this bar is data-side" from "this bar is instruction-side". Data gets a
+# yellow ramp, instruction a green ramp, each light->dark L1->L2->LLC.
+MERGED_METRIC_STYLE = {
+    "l1d_mpki": {"color": "#fff0a8"},
+    "l2d_mpki": {"color": "#ffd24d"},
+    "lld_mpki": {"color": "#e0a300"},
+    "l1i_mpki": {"color": "#c9e8b0"},
+    "l2i_mpki": {"color": "#85c96a"},
+    "lli_mpki": {"color": "#3f8f3f"},
+}
+
+
+# Workload classification from docs/exp/2026_07_15_analysis.md, "FTQ=0
+# Workload 분류": at ftq=0, which side's metric IPC tracks when the L2C
+# policy changes. Instruction/frontend-follow trades data MPKI for less
+# frontend stall; Data-follow does the opposite; Mixed/balanced isn't
+# explained by either side alone. Specific to the l2c_test 8-group set --
+# `group_traces()` falls back gracefully (an "Other" bucket) if a run's
+# traces don't match, so it's safe to pass for any run.
+WORKLOAD_GROUPS = [
+    ("Instruction/frontend-follow", ["delta", "sierra.a.6", "tango"]),
+    ("Data-follow", ["merced", "yankee"]),
+    ("Mixed/balanced", ["bravo", "sierra.a.4", "tahoe"]),
+]
+
+
+def group_traces(traces, groups=WORKLOAD_GROUPS):
+    """Reorder `traces` by `groups` (list of (name, [trace,...])), keeping
+    each group's internal order as listed. Traces present but not in any
+    group are appended at the end under "Other". Returns (ordered_traces,
+    group_labels) where group_labels is [(row_index, group_name), ...] for
+    the row each group starts at in the ordered list.
+    """
+    trace_set = set(traces)
+    ordered = []
+    labels = []
+    for name, members in groups:
+        present = [t for t in members if t in trace_set]
+        if not present:
+            continue
+        labels.append((len(ordered), name))
+        ordered.extend(present)
+    leftover = [t for t in traces if t not in set(ordered)]
+    if leftover:
+        labels.append((len(ordered), "Other"))
+        ordered.extend(leftover)
+    return ordered, labels
+
+
+def plot_overlay_merged(deltas, traces, ftq_sizes, policies, output_path, title, group_labels=None):
+    """One wide subplot per trace. Each (FTQ, policy) gets a single group of
+    bars -- dIPC (sign-colored red/blue), data-side MPKI (L1D/L2D/LLD,
+    yellow ramp) and instruction-side MPKI (L1I/L2I/LLI, green ramp) -- with
+    no data|instruction split and no stall%p metrics. dIPC bar-tops are
+    connected within each FTQ block (broken at FTQ boundaries only). Same
+    dual-axis (MPKI left, % right, symmetric around 0) treatment as the v1
+    overlay. Scales the same way v1 does: traces, FTQ sizes, and L2C
+    policies are all whatever the caller passes in.
+
+    `group_labels`, if given (see `group_traces()`), is [(row_index,
+    group_name), ...] -- the row each group starts at. `traces` must already
+    be in that grouped order (group_traces returns both together). Each
+    group's first row gets a bold left-aligned title so the vertical
+    stacking reads as labeled clusters instead of one flat trace list.
+    """
+    group_labels = dict(group_labels or [])
+    n_rows = len(traces)
+    n_policies = len(policies)
+    x_keys = [(ftq, policy) for ftq in ftq_sizes for policy in policies]
+    x = list(range(len(x_keys)))
+    n_metrics = len(MERGED_METRICS)
+    bar_width = 0.8 / n_metrics
+
+    fig_width = max(10.0, 0.45 * len(x_keys) + 2.0)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_width, 2.6 * n_rows), squeeze=False)
+    axes = axes[:, 0]
+
+    for row, trace in enumerate(traces):
+        ax = axes[row]
+        ax2 = ax.twinx()
+        axis_of = {"mpki": ax, "pct": ax2}
+        max_abs = {"mpki": 0.0, "pct": 0.0}
+        ipc_points = []
+        l2i_points = []
+        l2d_points = []
+
+        for xi, (ftq, policy) in enumerate(x_keys):
+            for m, key in enumerate(MERGED_METRICS):
+                val = deltas[key][trace][ftq].get(policy)
+                offset = xi + (m - (n_metrics - 1) / 2) * bar_width
+                base_color = METRIC_STYLE["ipc"]["color"] if key == "ipc" else MERGED_METRIC_STYLE[key]["color"]
+                axis_key = METRIC_SPECS[key]["axis"]
+                bar_color = IPC_UP_COLOR if (key == "ipc" and val is not None and val > 0) else base_color
+                axis_of[axis_key].bar(
+                    [offset],
+                    [val if val is not None else 0],
+                    width=bar_width,
+                    color=bar_color,
+                    zorder=3,
+                )
+                if val is not None:
+                    max_abs[axis_key] = max(max_abs[axis_key], abs(val))
+                if key == "ipc":
+                    ipc_points.append((offset, val) if val is not None else None)
+                elif key == "l2i_mpki":
+                    # 0i8d's d_l2i_mpki is forced to 0 (structural, not a
+                    # real trend point -- see build_deltas), so it's skipped
+                    # here rather than pulling the trend line down to 0.
+                    l2i_points.append((offset, val) if (val is not None and policy != "0i8d") else None)
+                elif key == "l2d_mpki":
+                    # Same treatment for 8i0d's structurally absent d_l2d_mpki.
+                    l2d_points.append((offset, val) if (val is not None and policy != "8i0d") else None)
+
+        # Trend lines broken at every FTQ boundary (one group per FTQ
+        # block), same treatment as the dIPC line: dL2I in green (matching
+        # the instruction-side bar family), dL2D in yellow (matching the
+        # data-side bar family), so each line reads as "the trend of its
+        # own bar color."
+        line_series = [
+            (ipc_points, axis_of["pct"], IPC_LINE_COLOR),
+            (l2i_points, axis_of["mpki"], MERGED_METRIC_STYLE["l2i_mpki"]["color"]),
+            (l2d_points, axis_of["mpki"], MERGED_METRIC_STYLE["l2d_mpki"]["color"]),
+        ]
+        for points, line_axis, color in line_series:
+            for group_start in range(0, len(x_keys), n_policies):
+                seg = points[group_start : group_start + n_policies]
+                pts = [p for p in seg if p is not None]
+                if len(pts) >= 2:
+                    line_axis.plot(
+                        [p[0] for p in pts],
+                        [p[1] for p in pts],
+                        color=color,
+                        linewidth=1.3,
+                        marker="o",
+                        markersize=3.5,
+                        zorder=4,
+                    )
+
+        pad = 1.15
+        mpki_limit = (max_abs["mpki"] * pad) or 1.0
+        pct_limit = (max_abs["pct"] * pad) or 1.0
+        # Inverted on purpose: "up" means improvement on both axes now (fewer
+        # misses is as much a win as higher IPC), instead of up meaning
+        # opposite things on the two axes.
+        ax.set_ylim(mpki_limit, -mpki_limit)
+        ax2.set_ylim(-pct_limit, pct_limit)
+
+        ax.axhline(0, color="#52514e", linewidth=0.8, zorder=2)
+        for boundary in range(n_policies, len(x_keys), n_policies):
+            ax.axvline(boundary - 0.5, color="#8a8980", linewidth=0.8, zorder=1)
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"{ftq}\n{policy}" for ftq, policy in x_keys], fontsize=6.5)
+        ax.tick_params(axis="y", labelsize=8)
+        ax2.tick_params(axis="y", labelsize=8)
+        ax.grid(axis="y", color="#e3e2dd", linewidth=0.6, zorder=0)
+        ax.spines["top"].set_visible(False)
+        ax2.spines["top"].set_visible(False)
+        ax.set_ylabel(f"{trace}\nMPKI (↑ = better)", fontsize=9)
+        ax2.set_ylabel("%", fontsize=9)
+
+        if row in group_labels:
+            # A heavier top spine plus a left-aligned bold title mark where
+            # each workload-classification group starts, so the stacked
+            # traces read as labeled clusters rather than one flat list.
+            if row != 0:
+                ax.spines["top"].set_visible(True)
+                ax.spines["top"].set_linewidth(1.4)
+                ax.spines["top"].set_color("#3a3a36")
+            ax.set_title(group_labels[row], loc="left", fontsize=12, fontweight="bold", color="#3a3a36", pad=8)
+
+    axes[-1].set_xlabel("FTQ / L2C policy", fontsize=9)
+
+    legend_y = 1.0 + 0.6 / (2.6 * n_rows)
+    groups = [
+        (
+            "IPC",
+            [METRIC_STYLE["ipc"]["color"], IPC_UP_COLOR],
+            ["dIPC (%) ≤ 0", "dIPC (%) > 0"],
+            0.22,
+        ),
+        (
+            "Data",
+            [MERGED_METRIC_STYLE[k]["color"] for k in ("l1d_mpki", "l2d_mpki", "lld_mpki")],
+            [METRIC_SPECS[k]["label"] for k in ("l1d_mpki", "l2d_mpki", "lld_mpki")],
+            0.5,
+        ),
+        (
+            "Instruction",
+            [MERGED_METRIC_STYLE[k]["color"] for k in ("l1i_mpki", "l2i_mpki", "lli_mpki")],
+            [METRIC_SPECS[k]["label"] for k in ("l1i_mpki", "l2i_mpki", "lli_mpki")],
+            0.78,
+        ),
+    ]
+    for group_title, colors, labels, x_anchor in groups:
+        handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in colors]
+        legend = fig.legend(
+            handles,
+            labels,
+            title=group_title,
+            loc="upper center",
+            ncol=1,
+            frameon=False,
+            bbox_to_anchor=(x_anchor, legend_y),
+            fontsize=8,
+            title_fontsize=8.5,
+        )
+        legend.get_title().set_fontweight("bold")
     fig.suptitle(title, fontsize=11, y=1.0 + 1.0 / (2.6 * n_rows))
     fig.tight_layout(rect=(0, 0, 1, 1.0))
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -429,6 +709,12 @@ def main():
         default=None,
         help="If set, also write a per-trace overlay plot (data-side and instruction-side metrics side by "
         "side per ftq/policy, dual MPKI/%% axes) to this path.",
+    )
+    parser.add_argument(
+        "--overlay-merged-output",
+        default=None,
+        help="If set, also write a v2 overlay plot: same data as --overlay-output but with the 3 stall%% "
+        "metrics dropped and data-side/instruction-side MPKI merged into one group per ftq/policy.",
     )
     args = parser.parse_args()
 
@@ -504,6 +790,21 @@ def main():
             title=f"{run_dir.name}: L2C partition delta vs {BASELINE} per trace (data | instruction side by side)",
         )
         print(f"Saved {overlay_path}")
+
+    if args.overlay_merged_output:
+        overlay_merged_path = Path(args.overlay_merged_output)
+        overlay_merged_path.parent.mkdir(parents=True, exist_ok=True)
+        grouped_traces, group_labels = group_traces(traces)
+        plot_overlay_merged(
+            deltas,
+            grouped_traces,
+            ftq_sizes,
+            policies,
+            overlay_merged_path,
+            title=f"{run_dir.name}: L2C partition delta vs {BASELINE} per trace (data + instruction merged, no stall%%)",
+            group_labels=group_labels,
+        )
+        print(f"Saved {overlay_merged_path}")
 
 
 if __name__ == "__main__":

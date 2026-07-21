@@ -63,33 +63,41 @@ SELECTED_L2C_POLICIES=()
 declare -A L2C_POLICY_BITS=(
     [shared]=1
     [0i8d]=2
-    [2i6d]=4
-    [4i4d]=8
-    [6i2d]=16
+    [1i7d]=4
+    [2i6d]=8
+    [4i4d]=16
+    [6i2d]=32
+    [8i0d]=64
 )
 declare -A L2C_POLICY_PARTITION=(
     [shared]=shared
+    [0i8d]=static
+    [1i7d]=static
     [2i6d]=static
     [4i4d]=static
     [6i2d]=static
-    [0i8d]=static
+    [8i0d]=static
 )
 declare -A L2C_POLICY_IWAYS=(
     [shared]=4
+    [0i8d]=0
+    [1i7d]=1
     [2i6d]=2
     [4i4d]=4
     [6i2d]=6
-    [0i8d]=0
+    [8i0d]=8
 )
 declare -A L2C_POLICY_DWAYS=(
     [shared]=4
+    [0i8d]=8
+    [1i7d]=7
     [2i6d]=6
     [4i4d]=4
     [6i2d]=2
-    [0i8d]=8
+    [8i0d]=0
 )
 declare -A L2C_POLICY_SIGNATURES=()
-L2C_POLICY_ORDER=(shared 0i8d 2i6d 4i4d 6i2d)
+L2C_POLICY_ORDER=(shared 0i8d 1i7d 2i6d 4i4d 6i2d 8i0d)
 
 # Only needed when actually building/running against CHAMPSIM_DIR (i.e. not -s-only
 # invocations), so -s can work even if CHAMPSIM_DIR doesn't exist right now.
@@ -154,13 +162,13 @@ print_help() {
     echo "Run parameters:"
     printf "  %-15s %-28s %s\n" "-p <num>" "worker threads" "(default: 16)"
     printf "  %-15s %-28s %s\n" "-f <mask>" "FDIP FTQ mask" "(default: ${DEFAULT_FTQ_MASK}=all)"
-    printf "  %-15s %-28s %s\n" "-L2C <mask>" "L2C I/D policy mask" "(default: 0x1=shared; 0x1f=all)"
+    printf "  %-15s %-28s %s\n" "-L2C <mask>" "L2C I/D policy mask" "(default: 0x1=shared; 0x7f=all)"
     printf "  %-15s %-28s %s\n" "-w <num>" "warmup instructions" "(default: ${WARMUP_INSTRUCTIONS})"
     printf "  %-15s %-28s %s\n" "-i <num>" "simulation instructions" "(default: ${SIMULATION_INSTRUCTIONS})"
     echo ""
     echo "L2C policy mask:"
-    echo "  0x1 shared   0x2 0:8   0x4 2:6"
-    echo "  0x8 4:4      0x10 6:2  0x1d old four modes, 0x1f all"
+    echo "  0x01 shared   0x02 0:8   0x04 1:7   0x08 2:6"
+    echo "  0x10 4:4      0x20 6:2   0x40 8:0   0x7f all"
     echo ""
     echo "Summary mask (-s):"
     echo "  0x01 summary table (MPKIs)"
@@ -182,7 +190,7 @@ print_help() {
     echo "Notes:"
     echo "  Reusing -r appends to that run.log."
     echo "  With -s, -r selects the run id to summarize instead of the latest run."
-    echo "  -s 0x80 requires L2C policies beyond shared, e.g. -L2C 0x1f."
+    echo "  -s 0x80 requires L2C policies beyond shared, e.g. -L2C 0x7f."
     exit
 }
 
@@ -242,7 +250,7 @@ select_ftq_sizes() {
 select_l2c_policies() {
     if ! [[ "${L2C_POLICY_MASK}" =~ ^(0[xX][0-9a-fA-F]+|[0-9]+)$ ]] || [ "$(( L2C_POLICY_MASK ))" -eq 0 ]; then
         echo "Invalid L2C policy mask: ${L2C_POLICY_MASK}"
-        echo "Use -L2C <mask>: 0x1=shared, 0x2=0:8, 0x4=2:6, 0x8=4:4, 0x10=6:2, 0x1f=all."
+        echo "Use -L2C <mask>: 0x1=shared, 0x2=0:8, 0x4=1:7, 0x8=2:6, 0x10=4:4, 0x20=6:2, 0x40=8:0, 0x7f=all."
         exit 1
     fi
 
@@ -258,9 +266,11 @@ policy_label() {
     case "$1" in
         shared) echo "shared" ;;
         0i8d) echo "0:8" ;;
+        1i7d) echo "1:7" ;;
         2i6d) echo "2:6" ;;
         4i4d) echo "4:4" ;;
         6i2d) echo "6:2" ;;
+        8i0d) echo "8:0" ;;
         *) echo "$1" ;;
     esac
 }
@@ -584,7 +594,8 @@ if [ "${SUMMARY}" = "Y" ]; then
         "${PYTHON_BIN}" "${REPO_ROOT}/parser/l2c/delta_grid.py" \
             "${latest_run}" \
             -o "${latest_run}/summary/l2c_delta_grid.png" \
-            --overlay-output "${latest_run}/summary/l2c_delta_combined.png"
+            --overlay-output "${latest_run}/summary/l2c_delta_combined.png" \
+            --overlay-merged-output "${latest_run}/summary/l2c_delta_combined_v2.png"
     fi
     exit
 fi
