@@ -95,13 +95,13 @@ scripts/run.sh -b -t
 scripts/run.sh -p 8 -t
 scripts/run.sh -f 0x01 -t
 scripts/run.sh -f 0xff -t
-scripts/run.sh -L2C 0x1f -t
-scripts/run.sh -f 0x15 -L2C 0x1f -t
-scripts/run.sh -f 0x15 -L2C 0x1f -s 0x40
-scripts/run.sh -f 0x15 -L2C 0x1f -s 0xC0
+scripts/run.sh -L2C 0x7f -t
+scripts/run.sh -f 0x15 -L2C 0x7f -t
+scripts/run.sh -f 0x15 -L2C 0x7f -s 0x40
+scripts/run.sh -f 0x15 -L2C 0x7f -s 0xC0
 scripts/run.sh -w 20000000 -i 100000000 -t
 scripts/run.sh -r my_run -t
-scripts/run.sh -r my_run -f 0xff -L2C 0x1f -s 0xC0
+scripts/run.sh -r my_run -f 0xff -L2C 0x7f -s 0xC0
 scripts/run.sh -T trace_gtrace_yankee.txt -t
 scripts/run.sh -C ChampSim_FDIP -b -t
 ```
@@ -109,7 +109,7 @@ scripts/run.sh -C ChampSim_FDIP -b -t
 - `-h`: help를 출력한다.
 - `-D`: 현재 default path와 output 구조를 출력한다.
 - `-C <dir>`: 사용할 ChampSim directory를 지정한다. 상대경로는 repository root 기준으로 해석하고, 절대경로도 사용할 수 있다. 기본값은 `ChampSim_FDIP`이다.
-- `-b`: `${CHAMPSIM_DIR}/config.sh ${CHAMPSIM_DIR}/champsim_config.json`와 `make`를 수행한다. 현재 스크립트 구조상 build 단계에서는 `shared`, `0i8d`, `2i6d`, `4i4d`, `6i2d` policy별 binary를 준비한다.
+- `-b`: `${CHAMPSIM_DIR}/config.sh ${CHAMPSIM_DIR}/champsim_config.json`와 `make`를 수행한다. 현재 스크립트 구조상 build 단계에서는 `shared`, `0i8d`, `1i7d`, `2i6d`, `4i4d`, `6i2d`, `8i0d` policy별 binary를 준비한다.
 - `-t`: trace 실행을 수행한다.
 - `-p <num>`: trace 병렬 실행 개수를 지정한다. 기본값은 16이다. 전체 `(FTQ size, L2C policy, trace)` job 중 동시에 실행할 개수의 상한으로 동작한다.
 - `-f <mask>`: FDIP FTQ size set을 16진 bitmask로 지정한다. `0x` prefix가 필수다. 기존의 `-f 0`, `-f 16`, `-f a` 방식은 더 이상 사용하지 않는다.
@@ -141,14 +141,15 @@ L2C policy mask는 다음과 같다.
 ```text
 0x01 shared
 0x02 0i8d
-0x04 2i6d
-0x08 4i4d
-0x10 6i2d
-0x1d old four modes (shared, 2i6d, 4i4d, 6i2d)
-0x1f all
+0x04 1i7d
+0x08 2i6d
+0x10 4i4d
+0x20 6i2d
+0x40 8i0d
+0x7f all
 ```
 
-`0i8d`는 instruction-origin access가 L2C를 bypass하고 LLC로 바로 가는 control policy다. `2i6d`, `4i4d`, `6i2d`는 L2C 8-way를 instruction/data way 범위로 정적으로 나눈다.
+`0i8d`는 instruction-origin access가 L2C search/fill을 bypass하고 LLC로 바로 가는 control policy다. `8i0d`는 data-origin access에 같은 bypass를 적용한다. `1i7d`, `2i6d`, `4i4d`, `6i2d`는 L2C 8-way를 instruction/data way 범위로 정적으로 나누며, 현재 모델에서는 자기 partition way 수만큼 search latency를 지불한다.
 
 Summary mask는 다음과 같다.
 
@@ -183,7 +184,7 @@ Summary mask는 다음과 같다.
 - **FDIP summary (bit `0x10`)**: FDIP coverage와 L1I miss 중심 표를 출력한다.
 - **frontend stall summary (bit `0x20`)**: Avg IPC, L1I MPKI, L1I Stall%, NoFetch%, BackendFull% 중심 표를 출력한다.
 - **metrics generation (bit `0x40`)**: `parser/parse_outputs.py`를 호출해 `metrics.csv`를 생성/재생성한다.
-- **L2C delta grid (bit `0x80`)**: `parser/l2c/delta_grid.py`를 호출해 shared 대비 L2C partition 변화량 CSV/그래프를 만든다. `-L2C 0x1f`처럼 shared 외 policy가 같이 선택되어 있어야 의미가 있다.
+- **L2C delta grid (bit `0x80`)**: `parser/l2c/delta_grid.py`를 호출해 shared 대비 L2C partition 변화량 CSV/그래프를 만든다. `-L2C 0x7f`처럼 shared 외 policy가 같이 선택되어 있어야 의미가 있다.
 
 스크립트를 실행하면 가장 먼저 실행에 사용된 커맨드 라인 전체(`Command: scripts/run.sh ...`)를 화면과 `run.log` 맨 앞에 기록한 뒤 나머지 작업을 시작한다.
 
@@ -231,9 +232,11 @@ outputs/<run_id>/
 │   ├── fdip_0/
 │   │   ├── shared/
 │   │   ├── 0i8d/
+│   │   ├── 1i7d/
 │   │   ├── 2i6d/
 │   │   ├── 4i4d/
-│   │   └── 6i2d/
+│   │   ├── 6i2d/
+│   │   └── 8i0d/
 │   └── fdip_32/
 │       └── ...
 └── summary/
@@ -245,9 +248,11 @@ outputs/<run_id>/
     └── fdip_32/
         ├── shared/
         ├── 0i8d/
+        ├── 1i7d/
         ├── 2i6d/
         ├── 4i4d/
-        └── 6i2d/
+        ├── 6i2d/
+        └── 8i0d/
 ```
 
 `config.json`에는 실행 당시 사용한 `${CHAMPSIM_DIR}/champsim_config.json`의 복사본이 저장된다. `config_signature.txt`에는 현재 config를 요약한 문자열이 저장된다. 현재 기본 설정의 signature는 다음과 같은 형태다.

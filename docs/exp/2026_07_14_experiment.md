@@ -6,9 +6,9 @@
 
 오늘부터 Codex와 논의하면서 나온 답변은 이 문서에도 함께 정리한다. 즉, 대화에서는 해석과 결론을 바로 설명하고, 문서에는 같은 내용을 실험 로그 형태로 누적한다.
 
-## `260713_2013_l2c_test` 결과 상태 확인
+## `260713_2013_l2c_partition` 결과 상태 확인
 
-2026-07-13에 시작한 L2C instruction/data partition 실험 결과가 `outputs/260713_2013_l2c_test`에 추가되어 있었다.
+2026-07-13에 시작한 L2C instruction/data partition 실험 결과가 `outputs/260713_2013_l2c_partition`에 추가되어 있었다.
 
 확인된 실험 축:
 
@@ -25,9 +25,9 @@
 사용한 summary 명령:
 
 ```bash
-./scripts/run.sh -s 0x21 -f 0  -L2C 0xf -r 260713_2013_l2c_test
-./scripts/run.sh -s 0x21 -f 4  -L2C 0xf -r 260713_2013_l2c_test
-./scripts/run.sh -s 0x21 -f 32 -L2C 0xf -r 260713_2013_l2c_test
+./scripts/run.sh -s 0x21 -f 0  -L2C 0xf -r 260713_2013_l2c_partition
+./scripts/run.sh -s 0x21 -f 4  -L2C 0xf -r 260713_2013_l2c_partition
+./scripts/run.sh -s 0x21 -f 32 -L2C 0xf -r 260713_2013_l2c_partition
 ```
 
 ## FTQ별, Trace별, L2C Policy별 비교
@@ -450,7 +450,7 @@ backend_data_stall = rob_stall_non_replay_load
 
 주의: 이 이름은 오늘 논의의 실험적 분류를 따른 것이다. 코드 의미만 보면 `LQ/SQ + ADDR_TRANS/REPLAY_LOAD`는 memory/data-related backend pressure에 가깝고, `NON_REPLAY_LOAD`는 ROB full 중 STLB miss/replay-load로 분류되지 않은 나머지다. 따라서 최종 논문/문서 용어로 쓰기 전에는 이름을 다시 다듬을 필요가 있다.
 
-기존 `260713_2013_l2c_test`의 `fdip_0`, `fdip_4`, `fdip_32` summary CSV를 새 parser 기준으로 다시 생성했다.
+기존 `260713_2013_l2c_partition`의 `fdip_0`, `fdip_4`, `fdip_32` summary CSV를 새 parser 기준으로 다시 생성했다.
 
 ### Combined stall 변화량 요약
 
@@ -619,7 +619,7 @@ L2C partition 설정은 run output의 config에 정상적으로 저장되어 있
 L2C MPKI = L2I MPKI + L2D MPKI
 ```
 
-전체 `260713_2013_l2c_test` summary CSV를 대상으로 확인한 결과, 최대 차이는 `7.1e-15` 수준이었다. 이는 부동소수점 연산 오차라서 사실상 완전히 일치한다고 보면 된다.
+전체 `260713_2013_l2c_partition` summary CSV를 대상으로 확인한 결과, 최대 차이는 `7.1e-15` 수준이었다. 이는 부동소수점 연산 오차라서 사실상 완전히 일치한다고 보면 된다.
 
 주의할 점은 ChampSim raw log의 `L2C TOTAL`과 parser의 `L2C MPKI`가 같은 의미가 아니라는 것이다.
 
@@ -766,9 +766,9 @@ Summary CSV 비교:
 
 `0i8d`의 목적대로 instruction-fetch origin traffic은 L2C를 skip하고 LLC에서만 관측된다. `L2I MPKI`가 0으로 내려가고, `L2C MPKI`가 data-side 값만 남는 것도 이 동작과 일치한다. 이 검증은 매우 작은 instruction 수로 수행했으므로 성능 판단용이 아니라 기능 동작 확인용으로만 사용한다.
 
-## 260713_2013_l2c_test에 0i8d 추가 실행
+## 260713_2013_l2c_partition에 0i8d 추가 실행
 
-기존 `260713_2013_l2c_test`는 처음에는 `sierra.a.6`만 실행했지만, 이후 추가 실행을 통해 다음 5개 trace group이 포함된 상태였다.
+기존 `260713_2013_l2c_partition`는 처음에는 `sierra.a.6`만 실행했지만, 이후 추가 실행을 통해 다음 5개 trace group이 포함된 상태였다.
 
 ```text
 bravo
@@ -820,7 +820,7 @@ find -L traces/gtrace_v2/bravo \
   -L2C 0x02 \
   -w 2000000 \
   -i 10000000 \
-  -r 260713_2013_l2c_test \
+  -r 260713_2013_l2c_partition \
   -p 50
 ```
 
@@ -910,7 +910,7 @@ job 수:
 
 ### 기존 5개 trace group만 장기 실행할 경우
 
-대상은 `260713_2013_l2c_test`에서 사용한 5개 trace group이다.
+대상은 `260713_2013_l2c_partition`에서 사용한 5개 trace group이다.
 
 ```text
 bravo

@@ -1000,7 +1000,7 @@ shared 대비 변화:
 
 ## 긴 실험 결과: sierra.a.6, FDIP off, L2C I:D partition sweep
 
-사용자가 직접 `260713_2013_l2c_test` run을 실행했다. 조건은 다음과 같다.
+사용자가 직접 `260713_2013_l2c_partition` run을 실행했다. 조건은 다음과 같다.
 
 - trace: `trace_gtrace_sierra.a.6.txt`
 - FDIP: off (`-f 0`)
@@ -1016,7 +1016,7 @@ shared 대비 변화:
 실행 결과는 네 policy 모두 18개 trace가 정상 완료되었다.
 
 ```bash
-./scripts/run.sh -s 0x21 -T trace_gtrace_sierra.a.6.txt -f 0 -L2C 0xf -r 260713_2013_l2c_test
+./scripts/run.sh -s 0x21 -T trace_gtrace_sierra.a.6.txt -f 0 -L2C 0xf -r 260713_2013_l2c_partition
 ```
 
 결과:

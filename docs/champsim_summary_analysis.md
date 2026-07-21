@@ -15,7 +15,7 @@ outputs/<run_id>/summary/fdip_<ftq>/<l2c_policy>/metrics.csv
 예:
 
 ```bash
-scripts/run.sh -r 260713_2013_l2c_test -f 0xff -L2C 0x1f -s 0x40
+scripts/run.sh -r 260713_2013_l2c_partition -f 0xff -L2C 0x1f -s 0x40
 ```
 
 `-s 0x01`, `0x08`, `0x10`, `0x20`, `0x80`은 `metrics.csv`를 읽어서 표나 그림을 만든다. **이 옵션들은 metrics를 자동 생성하지 않는다.** 따라서 새 run을 분석할 때는 보통 `0x40`을 함께 켠다.
