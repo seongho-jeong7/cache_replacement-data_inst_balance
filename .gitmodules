@@ -14,3 +14,6 @@
 	path = ChampSim_FDIP
 	url = https://github.com/seongho-jeong7/ChampSim_FDIP.git
 	branch = master
+[submodule "ChampSim_L2C"]
+	path = ChampSim_L2C
+	url = https://github.com/seongho-jeong7/ChampSim_L2C.git
