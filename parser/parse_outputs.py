@@ -142,8 +142,12 @@ FIELDNAMES = [
 
 def normalize_cache_name(name):
     if "_" in name and name.startswith("cpu"):
-        return name.split("_", 1)[1]
-    return name
+        name = name.split("_", 1)[1]
+    split_l2_aliases = {
+        "L2IC": "L2I",
+        "L2DC": "L2D",
+    }
+    return split_l2_aliases.get(name, name)
 
 
 def to_float(value):
@@ -156,6 +160,24 @@ def mpki(misses, instructions):
     if not instructions:
         return ""
     return misses / instructions * 1000
+
+
+def cache_demand_stats(cache_stats, cache, suffix=""):
+    load = cache_stats.get((cache, f"load{suffix}"))
+    rfo = cache_stats.get((cache, f"rfo{suffix}"))
+    if load is None and rfo is None:
+        return None
+
+    return {
+        "load_access": (load or {}).get("access", 0),
+        "load_miss": (load or {}).get("miss", 0),
+        "rfo_access": (rfo or {}).get("access", 0),
+        "rfo_miss": (rfo or {}).get("miss", 0),
+    }
+
+
+def demand_misses(stats):
+    return stats["load_miss"] + stats["rfo_miss"]
 
 
 def pct(part, total):
@@ -334,32 +356,56 @@ def parse_log(run_dir, log_path, default_config):
 
     for cache in ("L1I", "L1D", "L2C", "LLC"):
         cache_key = cache.lower()
-        load = cache_stats.get((cache, "load"), {})
-        rfo = cache_stats.get((cache, "rfo"), {})
-        total_misses = load.get("miss", 0) + rfo.get("miss", 0)
+        demand = cache_demand_stats(cache_stats, cache) or {
+            "load_access": "",
+            "load_miss": "",
+            "rfo_access": "",
+            "rfo_miss": "",
+        }
 
-        row[f"{cache_key}_load_access"] = load.get("access", "")
-        row[f"{cache_key}_load_miss"] = load.get("miss", "")
-        row[f"{cache_key}_rfo_access"] = rfo.get("access", "")
-        row[f"{cache_key}_rfo_miss"] = rfo.get("miss", "")
-        row[f"{cache_key}_mpki"] = mpki(total_misses, instructions)
+        if cache == "L2C" and demand["load_access"] == "":
+            l2i_demand = cache_demand_stats(cache_stats, "L2I")
+            l2d_demand = cache_demand_stats(cache_stats, "L2D")
+            if l2i_demand is not None or l2d_demand is not None:
+                l2i_demand = l2i_demand or {"load_access": 0, "load_miss": 0, "rfo_access": 0, "rfo_miss": 0}
+                l2d_demand = l2d_demand or {"load_access": 0, "load_miss": 0, "rfo_access": 0, "rfo_miss": 0}
+                demand = {
+                    key: l2i_demand[key] + l2d_demand[key]
+                    for key in ("load_access", "load_miss", "rfo_access", "rfo_miss")
+                }
 
-    # Origin-split (instruction-fetch vs data) demand MPKI at L2C/LLC, from the
-    # ChampSim_FDIP is_instr_fetch instrumentation. Only present in logs built
-    # with that instrumentation; left blank ("") for older logs.
-    split_fields = {
-        "L2C": {"i": "l2i_mpki", "d": "l2d_mpki"},
-        "LLC": {"i": "lli_mpki", "d": "lld_mpki"},
+        row[f"{cache_key}_load_access"] = demand["load_access"]
+        row[f"{cache_key}_load_miss"] = demand["load_miss"]
+        row[f"{cache_key}_rfo_access"] = demand["rfo_access"]
+        row[f"{cache_key}_rfo_miss"] = demand["rfo_miss"]
+        if demand["load_miss"] == "":
+            row[f"{cache_key}_mpki"] = ""
+        else:
+            row[f"{cache_key}_mpki"] = mpki(demand_misses(demand), instructions)
+
+    # Origin-split demand MPKI. FDIP logs report instruction/data origins as
+    # L2C LOAD_I/LOAD_D (always printed, zeroed when that origin is fully
+    # bypassed). Split-L2 logs report the same meaning as separate physical
+    # L2I/L2D caches, but a fully-bypassed side (0 ways) never gets its own
+    # cache object, so its section is entirely absent from the log rather
+    # than zeroed. Treat that absence as zero traffic -- not blank -- so
+    # MPKI/delta math stays comparable between the two builds.
+    l2_split_sources = {
+        "i": ("l2i_mpki", "L2I"),
+        "d": ("l2d_mpki", "L2D"),
     }
-    for cache, fields in split_fields.items():
-        for origin, field in fields.items():
-            load = cache_stats.get((cache, f"load_{origin}"))
-            rfo = cache_stats.get((cache, f"rfo_{origin}"))
-            if load is None and rfo is None:
-                row[field] = ""
-            else:
-                misses = (load or {}).get("miss", 0) + (rfo or {}).get("miss", 0)
-                row[field] = mpki(misses, instructions)
+    is_split_l2_log = any(cache_demand_stats(cache_stats, split_cache) is not None for _, split_cache in l2_split_sources.values())
+    for origin, (field, split_cache) in l2_split_sources.items():
+        demand = cache_demand_stats(cache_stats, "L2C", f"_{origin}")
+        if demand is None:
+            demand = cache_demand_stats(cache_stats, split_cache)
+        if demand is None and is_split_l2_log:
+            demand = {"load_access": 0, "load_miss": 0, "rfo_access": 0, "rfo_miss": 0}
+        row[field] = "" if demand is None else mpki(demand_misses(demand), instructions)
+
+    for origin, field in {"i": "lli_mpki", "d": "lld_mpki"}.items():
+        demand = cache_demand_stats(cache_stats, "LLC", f"_{origin}")
+        row[field] = "" if demand is None else mpki(demand_misses(demand), instructions)
 
     llc_total = cache_stats.get(("LLC", "total"), {})
     row["llc_total_access"] = llc_total.get("access", "")
