@@ -98,6 +98,11 @@ declare -A L2C_POLICY_DWAYS=(
 )
 declare -A L2C_POLICY_SIGNATURES=()
 L2C_POLICY_ORDER=(shared 0i8d 1i7d 2i6d 4i4d 6i2d 8i0d)
+# "default" is a pseudo-policy for when -L2C isn't given: it builds/runs the
+# base champsim_config.json completely unmodified (no partition/way override),
+# so each ChampSim fork's own config decides the behavior. Not selectable via
+# -L2C mask bits; -b always builds it alongside the 7 named policies.
+L2C_BUILD_ORDER=("${L2C_POLICY_ORDER[@]}" default)
 
 # Only needed when actually building/running against CHAMPSIM_DIR (i.e. not -s-only
 # invocations), so -s can work even if CHAMPSIM_DIR doesn't exist right now.
@@ -161,10 +166,12 @@ print_help() {
     echo ""
     echo "Run parameters:"
     printf "  %-15s %-28s %s\n" "-p <num>" "worker threads" "(default: 16)"
-    printf "  %-15s %-28s %s\n" "-f <mask>" "FDIP FTQ mask" "(default: ${DEFAULT_FTQ_MASK}=all)"
-    printf "  %-15s %-28s %s\n" "-L2C <mask>" "L2C I/D policy mask" "(default: 0x1=shared; 0x7f=all)"
     printf "  %-15s %-28s %s\n" "-w <num>" "warmup instructions" "(default: ${WARMUP_INSTRUCTIONS})"
     printf "  %-15s %-28s %s\n" "-i <num>" "simulation instructions" "(default: ${SIMULATION_INSTRUCTIONS})"
+    echo ""
+    echo "Run parameters(option):"
+    printf "  %-15s %-28s %s\n" "-f <mask>" "FDIP FTQ mask" "(not used if omitted, no default -- ChampSim binary's own compiled-in behavior applies)"
+    printf "  %-15s %-28s %s\n" "-L2C <mask>" "L2C I/D policy mask" "(not used if omitted, no default -- runs champsim_config.json unmodified)"
     echo ""
     echo "L2C policy mask:"
     echo "  0x01 shared   0x02 0:8   0x04 1:7   0x08 2:6"
@@ -218,6 +225,14 @@ find_traces() {
 }
 
 select_ftq_sizes() {
+    if [ "${FTQ_MASK_OPTION_GIVEN}" != "Y" ]; then
+        # -f wasn't given: don't pass --ftq_size to ChampSim at all (let the
+        # binary's own compiled-in default apply). Still bucket output under
+        # fdip_0/ since that's ChampSim_FDIP's off-by-default value.
+        FTQ_SIZES=(0)
+        return
+    fi
+
     local ftq_arg="${FTQ_MASK}"
 
     if ! [[ "${ftq_arg}" =~ ^0[xX][0-9a-fA-F]+$ ]] || [ "$(( ftq_arg ))" -eq 0 ]; then
@@ -248,6 +263,13 @@ select_ftq_sizes() {
 }
 
 select_l2c_policies() {
+    if [ "${L2C_POLICY_MASK_OPTION_GIVEN}" != "Y" ]; then
+        # -L2C wasn't given: don't force any partition/way override onto
+        # ChampSim at all. Run the base champsim_config.json as-is.
+        SELECTED_L2C_POLICIES=(default)
+        return
+    fi
+
     if ! [[ "${L2C_POLICY_MASK}" =~ ^(0[xX][0-9a-fA-F]+|[0-9]+)$ ]] || [ "$(( L2C_POLICY_MASK ))" -eq 0 ]; then
         echo "Invalid L2C policy mask: ${L2C_POLICY_MASK}"
         echo "Use -L2C <mask>: 0x1=shared, 0x2=0:8, 0x4=1:7, 0x8=2:6, 0x10=4:4, 0x20=6:2, 0x40=8:0, 0x7f=all."
@@ -271,21 +293,32 @@ policy_label() {
         4i4d) echo "4:4" ;;
         6i2d) echo "6:2" ;;
         8i0d) echo "8:0" ;;
+        default) echo "default (unconfigured)" ;;
         *) echo "$1" ;;
     esac
 }
 
 policy_binary() {
-    echo "${CHAMPSIM_DIR}/bin/champsim_l2c$1"
+    if [ "$1" = "default" ]; then
+        echo "${CHAMPSIM_DIR}/bin/champsim"
+    else
+        echo "${CHAMPSIM_DIR}/bin/champsim_l2c$1"
+    fi
 }
 
 prepare_policy_config() {
     local policy="$1"
     local config_out="$2"
-    local executable="champsim_l2c${policy}"
-    local partition="${L2C_POLICY_PARTITION[${policy}]}"
-    local iways="${L2C_POLICY_IWAYS[${policy}]}"
-    local dways="${L2C_POLICY_DWAYS[${policy}]}"
+    local executable=""
+    local partition=""
+    local iways=""
+    local dways=""
+    if [ "${policy}" != "default" ]; then
+        executable="champsim_l2c${policy}"
+        partition="${L2C_POLICY_PARTITION[${policy}]}"
+        iways="${L2C_POLICY_IWAYS[${policy}]}"
+        dways="${L2C_POLICY_DWAYS[${policy}]}"
+    fi
 
     "${PYTHON_BIN}" - "${CONFIG_FILE}" "${config_out}" "${executable}" "${partition}" "${iways}" "${dways}" <<'PY'
 import json
@@ -294,22 +327,27 @@ import sys
 from pathlib import Path
 
 config_in, config_out, executable, partition, iways, dways = sys.argv[1:]
-iways = int(iways)
-dways = int(dways)
 
 with open(config_in, encoding="utf-8") as fp:
     cfg = json.load(fp)
 
-cfg["executable_name"] = executable
 l2c = cfg.setdefault("L2C", {})
-l2c["partition"] = partition
-l2c["instruction_ways"] = iways
-l2c["data_ways"] = dways
+if executable:
+    # A named L2C policy: force its partition/way split onto the config.
+    cfg["executable_name"] = executable
+    l2c["partition"] = partition
+    l2c["instruction_ways"] = int(iways)
+    l2c["data_ways"] = int(dways)
+# else: "default" pseudo-policy -- run champsim_config.json completely
+# unmodified, so each ChampSim fork's own base config decides the behavior.
 
 Path(config_out).write_text(json.dumps(cfg, indent=4) + "\n", encoding="utf-8")
 
 cpu = (cfg.get("ooo_cpu") or [{}])[0]
-l2c_partition_sig = f"l2c{iways}i{dways}d" if partition == "static" else "l2cshared"
+if executable:
+    l2c_partition_sig = f"l2c{iways}i{dways}d" if partition == "static" else "l2cshared"
+else:
+    l2c_partition_sig = "l2cdefault"
 parts = [
     cpu.get("branch_predictor", "no"),
     cpu.get("btb", "no"),
@@ -339,7 +377,7 @@ prepare_selected_policy_configs() {
 prepare_all_policy_configs() {
     local config_dir="${RUN_OUTPUT_DIR}/configs"
     mkdir -p "${config_dir}"
-    for policy in "${L2C_POLICY_ORDER[@]}"; do
+    for policy in "${L2C_BUILD_ORDER[@]}"; do
         local generated_config="${config_dir}/champsim_l2c${policy}.json"
         L2C_POLICY_SIGNATURES["${policy}"]="$(prepare_policy_config "${policy}" "${generated_config}")"
     done
@@ -604,7 +642,7 @@ mkdir -p "${RUN_OUTPUT_DIR}"
 cp "${CONFIG_FILE}" "${RUN_OUTPUT_DIR}/config.json"
 prepare_all_policy_configs
 {
-    for policy in "${L2C_POLICY_ORDER[@]}"; do
+    for policy in "${L2C_BUILD_ORDER[@]}"; do
         printf '%s %s\n' "${policy}" "${L2C_POLICY_SIGNATURES[${policy}]}"
     done
 } > "${RUN_OUTPUT_DIR}/config_signature.txt"
@@ -615,7 +653,7 @@ echo "Run log: ${RUN_LOG}"
 log "Run log: ${RUN_LOG}"
 
 if [ "${BUILD}" = "Y" ]; then
-    for policy in "${L2C_POLICY_ORDER[@]}"; do
+    for policy in "${L2C_BUILD_ORDER[@]}"; do
         generated_config="${RUN_OUTPUT_DIR}/configs/champsim_l2c${policy}.json"
         log "Configuring ChampSim L2C $(policy_label "${policy}") with ${generated_config}"
         cd "${CHAMPSIM_DIR}"
@@ -653,8 +691,12 @@ if [ "${RUN_TRACES}" = "Y" ]; then
     done
     log "Run output directory: ${RUN_OUTPUT_DIR}"
     log "FTQ size(s): ${FTQ_SIZES[*]}"
-    log "L2C policy mask: ${L2C_POLICY_MASK} (${SELECTED_L2C_POLICIES[*]})"
-    export CHAMPSIM_DIR TRACES_ROOT RUN_OUTPUT_DIR RUN_LOG WARMUP_INSTRUCTIONS SIMULATION_INSTRUCTIONS
+    if [ "${L2C_POLICY_MASK_OPTION_GIVEN}" = "Y" ]; then
+        log "L2C policy mask: ${L2C_POLICY_MASK} (${SELECTED_L2C_POLICIES[*]})"
+    else
+        log "L2C policy mask: not given (${SELECTED_L2C_POLICIES[*]})"
+    fi
+    export CHAMPSIM_DIR TRACES_ROOT RUN_OUTPUT_DIR RUN_LOG WARMUP_INSTRUCTIONS SIMULATION_INSTRUCTIONS FTQ_MASK_OPTION_GIVEN
     trace_status=0
     {
         for policy in "${SELECTED_L2C_POLICIES[@]}"; do
@@ -681,7 +723,11 @@ if [ "${RUN_TRACES}" = "Y" ]; then
         trace_rest="${trace_rel#*/}"
         trace_group="$(dirname "${trace_rest}")"
         trace_name="$(basename "${trace_rel}")"
-        champsim_binary="${CHAMPSIM_DIR}/bin/champsim_l2c${policy}"
+        if [ "${policy}" = "default" ]; then
+            champsim_binary="${CHAMPSIM_DIR}/bin/champsim"
+        else
+            champsim_binary="${CHAMPSIM_DIR}/bin/champsim_l2c${policy}"
+        fi
 
         trace_name="${trace_name//[^A-Za-z0-9_.-]/_}"
         trace_root="${trace_root//[^A-Za-z0-9_.-]/_}"
@@ -691,13 +737,16 @@ if [ "${RUN_TRACES}" = "Y" ]; then
         output_file="${output_dir}/${config_signature}---${trace_name}.log"
         mkdir -p "${output_dir}"
 
+        champsim_args=(--warmup-instructions "${WARMUP_INSTRUCTIONS}" --simulation-instructions "${SIMULATION_INSTRUCTIONS}")
+        if [ "${FTQ_MASK_OPTION_GIVEN}" = "Y" ]; then
+            champsim_args+=(--ftq_size "${ftq_size}")
+        fi
+
         echo "Running trace: ${trace_abs}" >> "${RUN_LOG}"
-        echo "FTQ size: ${ftq_size}" >> "${RUN_LOG}"
+        echo "FTQ size: ${ftq_size}$([ "${FTQ_MASK_OPTION_GIVEN}" = "Y" ] || echo " (not passed, ChampSim default)")" >> "${RUN_LOG}"
         echo "L2C policy: ${policy}" >> "${RUN_LOG}"
         "${champsim_binary}" \
-            --warmup-instructions "${WARMUP_INSTRUCTIONS}" \
-            --simulation-instructions "${SIMULATION_INSTRUCTIONS}" \
-            --ftq_size "${ftq_size}" \
+            "${champsim_args[@]}" \
             "${trace_abs}" > "${output_file}" 2>&1
         status=$?
         if [ "${status}" -ne 0 ]; then
