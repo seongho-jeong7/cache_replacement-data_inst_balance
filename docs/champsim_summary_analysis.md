@@ -15,7 +15,7 @@ outputs/<run_id>/summary/fdip_<ftq>/<l2c_policy>/metrics.csv
 예:
 
 ```bash
-scripts/run.sh -r 260713_2013_l2c_partition -f 0xff -L2C 0x1f -s 0x40
+scripts/run.sh -r 260713_2013_l2c_partition -f 0xff -L2C 0x7f -s 0x40
 ```
 
 `-s 0x01`, `0x08`, `0x10`, `0x20`, `0x80`은 `metrics.csv`를 읽어서 표나 그림을 만든다. **이 옵션들은 metrics를 자동 생성하지 않는다.** 따라서 새 run을 분석할 때는 보통 `0x40`을 함께 켠다.
@@ -27,7 +27,7 @@ scripts/run.sh -r 260713_2013_l2c_partition -f 0xff -L2C 0x1f -s 0x40
 scripts/run.sh -r <run_id> -s 0x41
 
 # metrics 생성 + L2C delta 그래프 생성
-scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
+scripts/run.sh -r <run_id> -L2C 0x7f -s 0xC0
 ```
 
 ## 용어 설명
@@ -87,6 +87,15 @@ L1I는 RFO를 쓰지 않으므로 사실상 LOAD miss만 본다.
 계산식은 일반 demand MPKI와 동일하게 `LOAD + RFO` miss를 사용한다.
 
 이 계측이 없는 오래된 바이너리/로그에서는 해당 값이 비어 있을 수 있다.
+
+`ChampSim_Split`/`ChampSim_DPC4_Split`처럼 L2를 cache object 자체로 분리한 경우에는 로그 이름이 다르다. 의미상 다음처럼 대응해서 파싱한다.
+
+```text
+FDIP 계열:  cpu0->cpu0_L2C TOTAL_I  <=>  Split 계열: cpu0->cpu0_L2I TOTAL
+FDIP 계열:  cpu0->cpu0_L2C TOTAL_D  <=>  Split 계열: cpu0->cpu0_L2D TOTAL
+```
+
+즉 `l2i_mpki`/`l2d_mpki`는 구현 방식이 partition인지 split object인지와 무관하게 instruction/data 쪽 L2 demand miss를 비교하기 위한 공통 컬럼이다.
 
 참고로 실험 코드가 같은 기준으로 split을 기록했다면 일반적으로 아래 관계를 기대할 수 있다.
 
@@ -398,7 +407,7 @@ outputs/<run_id>/summary/fdip_<ftq>/<l2c_policy>/metrics.csv
 scripts/run.sh -r <run_id> -s 0x41
 
 # L2C delta graph 생성 전 metrics 재생성
-scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
+scripts/run.sh -r <run_id> -L2C 0x7f -s 0xC0
 ```
 
 ## L2C Partition Delta Grid (`-s 0x80`)
@@ -406,7 +415,7 @@ scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
 명령:
 
 ```bash
-scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
+scripts/run.sh -r <run_id> -L2C 0x7f -s 0xC0
 ```
 
 `0x80`은 `parser/l2c/delta_grid.py`를 실행해 L2C partition별 변화량을 `shared` 대비로 계산하고 그림/CSV를 만든다. `0x80`은 `metrics.csv`를 읽으므로 보통 `0x40`과 함께 `0xC0`으로 실행한다.
@@ -416,9 +425,11 @@ scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
 ```text
 outputs/<run_id>/summary/fdip_<ftq>/shared/metrics.csv
 outputs/<run_id>/summary/fdip_<ftq>/0i8d/metrics.csv
+outputs/<run_id>/summary/fdip_<ftq>/1i7d/metrics.csv
 outputs/<run_id>/summary/fdip_<ftq>/2i6d/metrics.csv
 outputs/<run_id>/summary/fdip_<ftq>/4i4d/metrics.csv
 outputs/<run_id>/summary/fdip_<ftq>/6i2d/metrics.csv
+outputs/<run_id>/summary/fdip_<ftq>/8i0d/metrics.csv
 ```
 
 출력 파일:
@@ -453,7 +464,7 @@ delta = <policy value> - shared value
 
 - L2C I/D partition이 IPC에 실제 이득을 주는지 확인
 - instruction side 개선과 data side 악화가 동시에 생기는지 확인
-- `0i8d`, `2i6d`, `4i4d`, `6i2d`를 `shared` 기준으로 비교
+- `0i8d`, `1i7d`, `2i6d`, `4i4d`, `6i2d`, `8i0d`를 `shared` 기준으로 비교
 - FTQ size별로 L2C partition 효과가 달라지는지 확인
 
 ## 자주 쓰는 조합
@@ -479,7 +490,7 @@ scripts/run.sh -r <run_id> -s 0x60
 L2C partition delta graph 생성:
 
 ```bash
-scripts/run.sh -r <run_id> -L2C 0x1f -s 0xC0
+scripts/run.sh -r <run_id> -L2C 0x7f -s 0xC0
 ```
 
 여러 표를 한 번에 출력:

@@ -13,3 +13,4 @@ traces/gtrace_v2/*
 outputs/*
 !outputs/.gitkeep
 ChampSim_FDIP_f6602de/
+ChampSim_split_L2/

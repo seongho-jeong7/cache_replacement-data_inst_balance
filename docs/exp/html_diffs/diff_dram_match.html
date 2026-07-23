@@ -1,0 +1,378 @@
+<title>partition vs split — DRAM 타이밍까지 맞춘 후 (trace × policy 차이)</title>
+<style>
+  :root {
+    --bg: #f5f6f5;
+    --surface: #ffffff;
+    --surface-2: #eef0ef;
+    --border: #dde1df;
+    --text: #1a1e1c;
+    --text-muted: #5c6360;
+    --text-faint: #8b918e;
+    --accent: #1f7a68;
+    --accent-soft: #e4f2ee;
+    --pos: #b5651d;
+    --pos-soft: #faede0;
+    --neg: #2f5fa8;
+    --neg-soft: #e7eefb;
+    --row-hover: #f0f4f3;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", "Menlo", monospace;
+    --sans: -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1110;
+    --surface: #141918;
+    --surface-2: #1a2020;
+    --border: #262d2b;
+    --text: #e7ebe9;
+    --text-muted: #98a19d;
+    --text-faint: #667169;
+    --accent: #4fc3a8;
+    --accent-soft: #16261f;
+    --pos: #e0a05c;
+    --pos-soft: #2a2016;
+    --neg: #7ca6e8;
+    --neg-soft: #171f2a;
+    --row-hover: #171e1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1110;
+      --surface: #141918;
+      --surface-2: #1a2020;
+      --border: #262d2b;
+      --text: #e7ebe9;
+      --text-muted: #98a19d;
+      --text-faint: #667169;
+      --accent: #4fc3a8;
+      --accent-soft: #16261f;
+      --pos: #e0a05c;
+      --pos-soft: #2a2016;
+      --neg: #7ca6e8;
+      --neg-soft: #171f2a;
+      --row-hover: #171e1c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  body { padding: 28px 32px 64px; }
+
+  header { max-width: 1180px; margin: 0 auto 20px; }
+  h1 {
+    font-size: 20px;
+    font-weight: 650;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 13px;
+    max-width: 70ch;
+  }
+  .subtitle code {
+    font-family: var(--mono);
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .stats {
+    max-width: 1180px;
+    margin: 18px auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 12px 16px;
+  }
+  .stat .label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    margin-bottom: 4px;
+  }
+  .stat .value {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 19px;
+    font-weight: 600;
+  }
+  .stat .value.pos { color: var(--pos); }
+  .stat .value.neg { color: var(--neg); }
+
+  .controls {
+    max-width: 1180px;
+    margin: 0 auto 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    align-items: center;
+  }
+  .policy-chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .policy-chip[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .controls input[type="search"] {
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    min-width: 200px;
+  }
+  .controls input[type="search"]:focus-visible,
+  .policy-chip:focus-visible,
+  th button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .controls .spacer { flex: 1; }
+  .controls .count {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  .table-wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: auto;
+    max-height: 72vh;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 860px; }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    z-index: 1;
+    border-bottom: 1px solid var(--border);
+  }
+  th button {
+    all: unset;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  th button .arrow { opacity: 0; font-size: 9px; }
+  th[data-active] button .arrow { opacity: 1; color: var(--accent); }
+  th[data-active] button { color: var(--text); }
+  td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  td.trace-cell {
+    font-family: var(--sans);
+    color: var(--text);
+  }
+  td.trace-cell .group {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  td.policy-cell {
+    color: var(--text-muted);
+  }
+  tbody tr:hover td { background: var(--row-hover); }
+  td.num { text-align: right; }
+  td.delta {
+    text-align: right;
+    font-weight: 600;
+    border-radius: 5px;
+  }
+  td.delta.pos { color: var(--pos); background: var(--pos-soft); }
+  td.delta.neg { color: var(--neg); background: var(--neg-soft); }
+  td.delta.flat { color: var(--text-faint); background: transparent; font-weight: 400; }
+
+  footer {
+    max-width: 1180px;
+    margin: 14px auto 0;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+</style>
+
+<header>
+  <h1>partition vs split — DRAM 타이밍까지 맞춘 후 (trace × policy 차이)</h1>
+  <div class="subtitle"><code>260722_2252_w10_i100_fdip_partition_comp_champ_split_dram_matched_2g</code> (FDIP, ooo_cpu + DRAM tCAS/tRCD/tRP/tRAS까지 Split과 동일하게 맞춤) vs <code>260721_2005_w10_i100_champ_split_2g</code> (Split) &mdash; <code>d = split − fdip</code>, 평균 없이 132개 (trace × policy, g2 22개 trace) 조합 전체.</div>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="controls">
+  <span id="policyChips"></span>
+  <input type="search" id="search" placeholder="trace 검색 (예: yankee, tahoe_0029)" />
+  <span class="spacer"></span>
+  <span class="count" id="rowCount"></span>
+</div>
+
+<div class="table-wrap">
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th data-key="trace"><button>trace <span class="arrow">▾</span></button></th>
+        <th data-key="policy"><button>policy <span class="arrow">▾</span></button></th>
+        <th data-key="ipc_fdip"><button>IPC fdip <span class="arrow">▾</span></button></th>
+        <th data-key="ipc_split"><button>IPC split <span class="arrow">▾</span></button></th>
+        <th data-key="d_ipc" data-active><button>d IPC <span class="arrow">▾</span></button></th>
+        <th data-key="d_l1i"><button>d L1I MPKI <span class="arrow">▾</span></button></th>
+        <th data-key="d_l1d"><button>d L1D MPKI <span class="arrow">▾</span></button></th>
+        <th data-key="d_l2c"><button>d L2C MPKI <span class="arrow">▾</span></button></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<footer>
+  양수(주황) = Split이 더 높음, 음수(파랑) = FDIP가 더 높음. 헤더 클릭으로 정렬, policy 칩으로 필터.
+</footer>
+
+<script>
+  const __DATA__ = [{"trace": "delta_0000", "group": "delta", "policy": "shared", "ipc_fdip": 0.364, "ipc_split": 0.503, "d_ipc": 0.139, "d_l1i": 0.004, "d_l1d": 21.27, "d_l2c": 0.148}, {"trace": "delta_0001", "group": "delta", "policy": "shared", "ipc_fdip": 0.5021, "ipc_split": 0.6195, "d_ipc": 0.1174, "d_l1i": -0.001, "d_l1d": 14.831, "d_l2c": -0.178}, {"trace": "delta_0002", "group": "delta", "policy": "shared", "ipc_fdip": 0.5276, "ipc_split": 0.6315, "d_ipc": 0.1039, "d_l1i": 0.005, "d_l1d": 17.823, "d_l2c": -0.095}, {"trace": "delta_0003", "group": "delta", "policy": "shared", "ipc_fdip": 0.5641, "ipc_split": 0.6022, "d_ipc": 0.0381, "d_l1i": -0.0, "d_l1d": -0.128, "d_l2c": -0.023}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3889, "ipc_split": 0.4999, "d_ipc": 0.111, "d_l1i": 0.141, "d_l1d": 3.866, "d_l2c": -2.883}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.4, "ipc_split": 0.512, "d_ipc": 0.112, "d_l1i": 0.078, "d_l1d": 3.821, "d_l2c": -2.113}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3016, "ipc_split": 0.3888, "d_ipc": 0.0872, "d_l1i": 0.064, "d_l1d": 4.187, "d_l2c": -0.739}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.2601, "ipc_split": 0.3366, "d_ipc": 0.0765, "d_l1i": -0.163, "d_l1d": 3.936, "d_l2c": -3.01}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3599, "ipc_split": 0.4653, "d_ipc": 0.1054, "d_l1i": 0.026, "d_l1d": 4.09, "d_l2c": -1.65}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3885, "ipc_split": 0.4967, "d_ipc": 0.1082, "d_l1i": 0.154, "d_l1d": 3.718, "d_l2c": -1.762}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.4295, "ipc_split": 0.543, "d_ipc": 0.1135, "d_l1i": 0.266, "d_l1d": 3.452, "d_l2c": -0.578}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3586, "ipc_split": 0.4576, "d_ipc": 0.099, "d_l1i": -0.095, "d_l1d": 4.173, "d_l2c": -2.993}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3069, "ipc_split": 0.4067, "d_ipc": 0.0998, "d_l1i": 0.046, "d_l1d": 4.249, "d_l2c": -2.038}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3226, "ipc_split": 0.4188, "d_ipc": 0.0962, "d_l1i": 0.018, "d_l1d": 3.639, "d_l2c": -2.921}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.4041, "ipc_split": 0.4523, "d_ipc": 0.0482, "d_l1i": 0.0, "d_l1d": 14.597, "d_l2c": 0.005}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3302, "ipc_split": 0.4309, "d_ipc": 0.1007, "d_l1i": 0.001, "d_l1d": 5.616, "d_l2c": -1.87}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3341, "ipc_split": 0.4279, "d_ipc": 0.0938, "d_l1i": -0.059, "d_l1d": 4.089, "d_l2c": -2.586}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3578, "ipc_split": 0.46, "d_ipc": 0.1022, "d_l1i": -0.13, "d_l1d": 3.959, "d_l2c": -1.114}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3426, "ipc_split": 0.4359, "d_ipc": 0.0933, "d_l1i": -0.04, "d_l1d": 4.525, "d_l2c": -2.487}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.395, "ipc_split": 0.5009, "d_ipc": 0.1059, "d_l1i": 0.052, "d_l1d": 5.456, "d_l2c": -1.637}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.4326, "ipc_split": 0.5476, "d_ipc": 0.115, "d_l1i": 0.204, "d_l1d": 4.07, "d_l2c": -1.883}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "shared", "ipc_fdip": 0.3538, "ipc_split": 0.456, "d_ipc": 0.1022, "d_l1i": -0.032, "d_l1d": 3.87, "d_l2c": -2.234}, {"trace": "delta_0000", "group": "delta", "policy": "0i8d", "ipc_fdip": 0.3649, "ipc_split": 0.5064, "d_ipc": 0.1415, "d_l1i": -0.036, "d_l1d": 21.405, "d_l2c": 0.469}, {"trace": "delta_0001", "group": "delta", "policy": "0i8d", "ipc_fdip": 0.5035, "ipc_split": 0.6213, "d_ipc": 0.1178, "d_l1i": -0.038, "d_l1d": 14.896, "d_l2c": -0.048}, {"trace": "delta_0002", "group": "delta", "policy": "0i8d", "ipc_fdip": 0.53, "ipc_split": 0.6345, "d_ipc": 0.1045, "d_l1i": -0.021, "d_l1d": 17.885, "d_l2c": -0.043}, {"trace": "delta_0003", "group": "delta", "policy": "0i8d", "ipc_fdip": 0.5647, "ipc_split": 0.6021, "d_ipc": 0.0374, "d_l1i": -0.001, "d_l1d": -0.21, "d_l2c": -0.015}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3939, "ipc_split": 0.5242, "d_ipc": 0.1303, "d_l1i": -0.381, "d_l1d": 3.931, "d_l2c": -0.168}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.4063, "ipc_split": 0.5391, "d_ipc": 0.1328, "d_l1i": -0.432, "d_l1d": 3.928, "d_l2c": -0.184}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3039, "ipc_split": 0.3978, "d_ipc": 0.0939, "d_l1i": -0.137, "d_l1d": 4.236, "d_l2c": -0.207}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.2633, "ipc_split": 0.35, "d_ipc": 0.0867, "d_l1i": -0.336, "d_l1d": 3.968, "d_l2c": -0.28}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3645, "ipc_split": 0.4881, "d_ipc": 0.1236, "d_l1i": -0.359, "d_l1d": 4.151, "d_l2c": -0.137}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3949, "ipc_split": 0.5208, "d_ipc": 0.1259, "d_l1i": -0.356, "d_l1d": 3.798, "d_l2c": -0.191}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.4306, "ipc_split": 0.5604, "d_ipc": 0.1298, "d_l1i": -0.317, "d_l1d": 3.471, "d_l2c": -0.075}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3627, "ipc_split": 0.4757, "d_ipc": 0.113, "d_l1i": -0.454, "d_l1d": 4.263, "d_l2c": -0.056}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3111, "ipc_split": 0.4273, "d_ipc": 0.1162, "d_l1i": -0.356, "d_l1d": 4.243, "d_l2c": -0.193}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3279, "ipc_split": 0.4389, "d_ipc": 0.111, "d_l1i": -0.308, "d_l1d": 3.716, "d_l2c": -0.179}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.4041, "ipc_split": 0.4523, "d_ipc": 0.0482, "d_l1i": -0.0, "d_l1d": 14.66, "d_l2c": 0.003}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3324, "ipc_split": 0.4403, "d_ipc": 0.1079, "d_l1i": -0.228, "d_l1d": 5.64, "d_l2c": -0.036}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3394, "ipc_split": 0.4479, "d_ipc": 0.1085, "d_l1i": -0.397, "d_l1d": 3.981, "d_l2c": -0.199}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3627, "ipc_split": 0.4801, "d_ipc": 0.1174, "d_l1i": -0.406, "d_l1d": 4.011, "d_l2c": -0.187}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3469, "ipc_split": 0.4544, "d_ipc": 0.1075, "d_l1i": -0.431, "d_l1d": 4.501, "d_l2c": -0.126}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.4, "ipc_split": 0.5201, "d_ipc": 0.1201, "d_l1i": -0.283, "d_l1d": 5.549, "d_l2c": -0.171}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.439, "ipc_split": 0.5744, "d_ipc": 0.1354, "d_l1i": -0.477, "d_l1d": 4.104, "d_l2c": -0.138}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "0i8d", "ipc_fdip": 0.3589, "ipc_split": 0.4775, "d_ipc": 0.1186, "d_l1i": -0.352, "d_l1d": 3.81, "d_l2c": -0.204}, {"trace": "delta_0000", "group": "delta", "policy": "2i6d", "ipc_fdip": 0.3651, "ipc_split": 0.505, "d_ipc": 0.1399, "d_l1i": -0.015, "d_l1d": 21.353, "d_l2c": 0.05}, {"trace": "delta_0001", "group": "delta", "policy": "2i6d", "ipc_fdip": 0.5032, "ipc_split": 0.6206, "d_ipc": 0.1174, "d_l1i": 0.005, "d_l1d": 14.956, "d_l2c": 0.11}, {"trace": "delta_0002", "group": "delta", "policy": "2i6d", "ipc_fdip": 0.53, "ipc_split": 0.633, "d_ipc": 0.103, "d_l1i": 0.031, "d_l1d": 17.845, "d_l2c": 0.082}, {"trace": "delta_0003", "group": "delta", "policy": "2i6d", "ipc_fdip": 0.5651, "ipc_split": 0.6023, "d_ipc": 0.0372, "d_l1i": 0.0, "d_l1d": 0.14, "d_l2c": -0.015}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3874, "ipc_split": 0.4973, "d_ipc": 0.1099, "d_l1i": 0.225, "d_l1d": 3.761, "d_l2c": -0.214}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3987, "ipc_split": 0.51, "d_ipc": 0.1113, "d_l1i": 0.074, "d_l1d": 3.819, "d_l2c": 0.242}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3009, "ipc_split": 0.3868, "d_ipc": 0.0859, "d_l1i": 0.083, "d_l1d": 4.152, "d_l2c": 0.009}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.2595, "ipc_split": 0.3351, "d_ipc": 0.0756, "d_l1i": 0.03, "d_l1d": 3.883, "d_l2c": 0.333}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3589, "ipc_split": 0.4641, "d_ipc": 0.1052, "d_l1i": 0.125, "d_l1d": 4.025, "d_l2c": -0.216}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.388, "ipc_split": 0.4937, "d_ipc": 0.1057, "d_l1i": 0.086, "d_l1d": 3.69, "d_l2c": -1.292}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.425, "ipc_split": 0.5361, "d_ipc": 0.1111, "d_l1i": 0.21, "d_l1d": 3.408, "d_l2c": -0.893}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3564, "ipc_split": 0.4529, "d_ipc": 0.0965, "d_l1i": 0.215, "d_l1d": 4.156, "d_l2c": -0.012}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.306, "ipc_split": 0.4062, "d_ipc": 0.1002, "d_l1i": 0.241, "d_l1d": 4.139, "d_l2c": 0.411}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3221, "ipc_split": 0.4183, "d_ipc": 0.0962, "d_l1i": 0.107, "d_l1d": 3.591, "d_l2c": -0.137}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.4036, "ipc_split": 0.452, "d_ipc": 0.0484, "d_l1i": 0.0, "d_l1d": 14.718, "d_l2c": 0.008}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3293, "ipc_split": 0.4294, "d_ipc": 0.1001, "d_l1i": -0.003, "d_l1d": 5.584, "d_l2c": -0.318}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.334, "ipc_split": 0.4265, "d_ipc": 0.0925, "d_l1i": 0.183, "d_l1d": 3.858, "d_l2c": 0.269}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.356, "ipc_split": 0.4567, "d_ipc": 0.1007, "d_l1i": -0.109, "d_l1d": 3.883, "d_l2c": -1.127}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3414, "ipc_split": 0.4331, "d_ipc": 0.0917, "d_l1i": 0.014, "d_l1d": 4.399, "d_l2c": -0.203}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.394, "ipc_split": 0.4982, "d_ipc": 0.1042, "d_l1i": 0.152, "d_l1d": 5.465, "d_l2c": -0.425}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.4304, "ipc_split": 0.5436, "d_ipc": 0.1132, "d_l1i": 0.05, "d_l1d": 3.994, "d_l2c": -0.826}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "2i6d", "ipc_fdip": 0.3529, "ipc_split": 0.4549, "d_ipc": 0.102, "d_l1i": 0.13, "d_l1d": 3.656, "d_l2c": -0.364}, {"trace": "delta_0000", "group": "delta", "policy": "4i4d", "ipc_fdip": 0.3663, "ipc_split": 0.5077, "d_ipc": 0.1414, "d_l1i": 0.01, "d_l1d": 21.46, "d_l2c": -0.034}, {"trace": "delta_0001", "group": "delta", "policy": "4i4d", "ipc_fdip": 0.5072, "ipc_split": 0.6257, "d_ipc": 0.1185, "d_l1i": 0.012, "d_l1d": 14.905, "d_l2c": -0.009}, {"trace": "delta_0002", "group": "delta", "policy": "4i4d", "ipc_fdip": 0.5349, "ipc_split": 0.6383, "d_ipc": 0.1034, "d_l1i": 0.005, "d_l1d": 17.829, "d_l2c": 0.068}, {"trace": "delta_0003", "group": "delta", "policy": "4i4d", "ipc_fdip": 0.5653, "ipc_split": 0.6016, "d_ipc": 0.0363, "d_l1i": 0.0, "d_l1d": -0.167, "d_l2c": -0.017}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.388, "ipc_split": 0.4977, "d_ipc": 0.1097, "d_l1i": 0.246, "d_l1d": 3.823, "d_l2c": -1.655}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3988, "ipc_split": 0.5105, "d_ipc": 0.1117, "d_l1i": 0.079, "d_l1d": 3.892, "d_l2c": -1.519}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.2999, "ipc_split": 0.3864, "d_ipc": 0.0865, "d_l1i": 0.077, "d_l1d": 4.222, "d_l2c": -0.213}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.2596, "ipc_split": 0.3356, "d_ipc": 0.076, "d_l1i": -0.105, "d_l1d": 3.895, "d_l2c": -0.728}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3584, "ipc_split": 0.4634, "d_ipc": 0.105, "d_l1i": 0.057, "d_l1d": 4.122, "d_l2c": -0.704}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3866, "ipc_split": 0.4933, "d_ipc": 0.1067, "d_l1i": 0.313, "d_l1d": 3.691, "d_l2c": -1.075}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.4281, "ipc_split": 0.5385, "d_ipc": 0.1104, "d_l1i": 0.312, "d_l1d": 3.4, "d_l2c": -0.106}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3584, "ipc_split": 0.454, "d_ipc": 0.0956, "d_l1i": 0.344, "d_l1d": 4.172, "d_l2c": -0.029}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3053, "ipc_split": 0.4049, "d_ipc": 0.0996, "d_l1i": 0.003, "d_l1d": 4.239, "d_l2c": -0.271}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3215, "ipc_split": 0.4164, "d_ipc": 0.0949, "d_l1i": 0.139, "d_l1d": 3.645, "d_l2c": -0.825}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.4034, "ipc_split": 0.4516, "d_ipc": 0.0482, "d_l1i": -0.0, "d_l1d": 14.698, "d_l2c": 0.015}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3301, "ipc_split": 0.4307, "d_ipc": 0.1006, "d_l1i": 0.022, "d_l1d": 5.566, "d_l2c": -0.768}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3335, "ipc_split": 0.4258, "d_ipc": 0.0923, "d_l1i": 0.181, "d_l1d": 3.938, "d_l2c": 1.293}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3568, "ipc_split": 0.4566, "d_ipc": 0.0998, "d_l1i": -0.076, "d_l1d": 3.92, "d_l2c": -0.296}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3417, "ipc_split": 0.4336, "d_ipc": 0.0919, "d_l1i": 0.162, "d_l1d": 4.49, "d_l2c": 0.411}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3935, "ipc_split": 0.4988, "d_ipc": 0.1053, "d_l1i": 0.078, "d_l1d": 5.478, "d_l2c": 0.095}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.4342, "ipc_split": 0.5478, "d_ipc": 0.1136, "d_l1i": 0.253, "d_l1d": 4.05, "d_l2c": -1.096}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "4i4d", "ipc_fdip": 0.3525, "ipc_split": 0.4536, "d_ipc": 0.1011, "d_l1i": -0.067, "d_l1d": 3.776, "d_l2c": -2.116}, {"trace": "delta_0000", "group": "delta", "policy": "6i2d", "ipc_fdip": 0.3693, "ipc_split": 0.5112, "d_ipc": 0.1419, "d_l1i": 0.01, "d_l1d": 21.419, "d_l2c": 0.32}, {"trace": "delta_0001", "group": "delta", "policy": "6i2d", "ipc_fdip": 0.5087, "ipc_split": 0.6282, "d_ipc": 0.1195, "d_l1i": 0.008, "d_l1d": 14.969, "d_l2c": -0.072}, {"trace": "delta_0002", "group": "delta", "policy": "6i2d", "ipc_fdip": 0.5365, "ipc_split": 0.6431, "d_ipc": 0.1066, "d_l1i": -0.002, "d_l1d": 17.957, "d_l2c": -0.035}, {"trace": "delta_0003", "group": "delta", "policy": "6i2d", "ipc_fdip": 0.5642, "ipc_split": 0.6012, "d_ipc": 0.037, "d_l1i": -0.0, "d_l1d": 0.256, "d_l2c": -0.024}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3877, "ipc_split": 0.4963, "d_ipc": 0.1086, "d_l1i": 0.271, "d_l1d": 3.929, "d_l2c": -0.818}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.4, "ipc_split": 0.5102, "d_ipc": 0.1102, "d_l1i": 0.458, "d_l1d": 3.95, "d_l2c": -0.792}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.2997, "ipc_split": 0.3855, "d_ipc": 0.0858, "d_l1i": 0.059, "d_l1d": 4.287, "d_l2c": -0.168}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.2585, "ipc_split": 0.3345, "d_ipc": 0.076, "d_l1i": -0.136, "d_l1d": 3.986, "d_l2c": -3.593}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.359, "ipc_split": 0.4634, "d_ipc": 0.1044, "d_l1i": 0.176, "d_l1d": 4.162, "d_l2c": -1.05}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3875, "ipc_split": 0.4902, "d_ipc": 0.1027, "d_l1i": 0.232, "d_l1d": 3.837, "d_l2c": 2.248}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.4286, "ipc_split": 0.5384, "d_ipc": 0.1098, "d_l1i": 0.251, "d_l1d": 3.449, "d_l2c": 1.143}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3592, "ipc_split": 0.4552, "d_ipc": 0.096, "d_l1i": 0.211, "d_l1d": 4.242, "d_l2c": 0.799}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3044, "ipc_split": 0.4035, "d_ipc": 0.0991, "d_l1i": -0.048, "d_l1d": 4.197, "d_l2c": -2.046}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3201, "ipc_split": 0.413, "d_ipc": 0.0929, "d_l1i": 0.15, "d_l1d": 3.699, "d_l2c": -1.257}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.4029, "ipc_split": 0.4511, "d_ipc": 0.0482, "d_l1i": 0.0, "d_l1d": 14.698, "d_l2c": 0.013}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.332, "ipc_split": 0.4331, "d_ipc": 0.1011, "d_l1i": 0.019, "d_l1d": 5.723, "d_l2c": -1.147}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3327, "ipc_split": 0.4245, "d_ipc": 0.0918, "d_l1i": -0.182, "d_l1d": 4.057, "d_l2c": -4.473}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3555, "ipc_split": 0.455, "d_ipc": 0.0995, "d_l1i": 0.109, "d_l1d": 4.045, "d_l2c": 0.095}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3428, "ipc_split": 0.4344, "d_ipc": 0.0916, "d_l1i": 0.214, "d_l1d": 4.521, "d_l2c": 0.445}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3938, "ipc_split": 0.498, "d_ipc": 0.1042, "d_l1i": 0.091, "d_l1d": 5.527, "d_l2c": -0.758}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.4367, "ipc_split": 0.552, "d_ipc": 0.1153, "d_l1i": 0.315, "d_l1d": 4.053, "d_l2c": 1.348}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "6i2d", "ipc_fdip": 0.3519, "ipc_split": 0.4522, "d_ipc": 0.1003, "d_l1i": -0.153, "d_l1d": 3.814, "d_l2c": -4.224}, {"trace": "delta_0000", "group": "delta", "policy": "8i0d", "ipc_fdip": 0.3656, "ipc_split": 0.5116, "d_ipc": 0.146, "d_l1i": 0.009, "d_l1d": 20.752, "d_l2c": -0.015}, {"trace": "delta_0001", "group": "delta", "policy": "8i0d", "ipc_fdip": 0.3447, "ipc_split": 0.4031, "d_ipc": 0.0584, "d_l1i": 0.007, "d_l1d": 16.115, "d_l2c": -0.004}, {"trace": "delta_0002", "group": "delta", "policy": "8i0d", "ipc_fdip": 0.3475, "ipc_split": 0.3961, "d_ipc": 0.0486, "d_l1i": 0.003, "d_l1d": 17.173, "d_l2c": -0.033}, {"trace": "delta_0003", "group": "delta", "policy": "8i0d", "ipc_fdip": 0.477, "ipc_split": 0.5137, "d_ipc": 0.0367, "d_l1i": 0.0, "d_l1d": 5.549, "d_l2c": 0.0}, {"trace": "sierra.a.6_0000", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3975, "ipc_split": 0.5217, "d_ipc": 0.1242, "d_l1i": 0.281, "d_l1d": 3.664, "d_l2c": -1.387}, {"trace": "sierra.a.6_0001", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.4138, "ipc_split": 0.5441, "d_ipc": 0.1303, "d_l1i": 0.097, "d_l1d": 3.738, "d_l2c": 0.425}, {"trace": "sierra.a.6_0002", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3057, "ipc_split": 0.3985, "d_ipc": 0.0928, "d_l1i": 0.067, "d_l1d": 4.178, "d_l2c": -0.06}, {"trace": "sierra.a.6_0003", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.263, "ipc_split": 0.3439, "d_ipc": 0.0809, "d_l1i": 0.171, "d_l1d": 3.746, "d_l2c": -1.551}, {"trace": "sierra.a.6_0004", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.371, "ipc_split": 0.4877, "d_ipc": 0.1167, "d_l1i": 0.104, "d_l1d": 3.878, "d_l2c": -0.764}, {"trace": "sierra.a.6_0005", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3978, "ipc_split": 0.5177, "d_ipc": 0.1199, "d_l1i": 0.418, "d_l1d": 3.612, "d_l2c": -0.154}, {"trace": "sierra.a.6_0006", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.4392, "ipc_split": 0.5651, "d_ipc": 0.1259, "d_l1i": 0.195, "d_l1d": 3.327, "d_l2c": -0.195}, {"trace": "sierra.a.6_0007", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3675, "ipc_split": 0.4776, "d_ipc": 0.1101, "d_l1i": 0.267, "d_l1d": 4.068, "d_l2c": 0.18}, {"trace": "sierra.a.6_0008", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3127, "ipc_split": 0.4218, "d_ipc": 0.1091, "d_l1i": 0.186, "d_l1d": 4.034, "d_l2c": -0.602}, {"trace": "sierra.a.6_0009", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3269, "ipc_split": 0.4275, "d_ipc": 0.1006, "d_l1i": 0.142, "d_l1d": 3.519, "d_l2c": -1.122}, {"trace": "sierra.a.6_0010", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3937, "ipc_split": 0.4472, "d_ipc": 0.0535, "d_l1i": -0.0, "d_l1d": 14.275, "d_l2c": 0.0}, {"trace": "sierra.a.6_0011", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3407, "ipc_split": 0.4557, "d_ipc": 0.115, "d_l1i": 0.106, "d_l1d": 5.563, "d_l2c": -0.242}, {"trace": "sierra.a.6_0012", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3411, "ipc_split": 0.4447, "d_ipc": 0.1036, "d_l1i": 0.02, "d_l1d": 3.75, "d_l2c": -0.511}, {"trace": "sierra.a.6_0013", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3673, "ipc_split": 0.4794, "d_ipc": 0.1121, "d_l1i": 0.165, "d_l1d": 3.81, "d_l2c": 0.86}, {"trace": "sierra.a.6_0014", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3524, "ipc_split": 0.4589, "d_ipc": 0.1065, "d_l1i": 0.09, "d_l1d": 4.269, "d_l2c": -0.408}, {"trace": "sierra.a.6_0015", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.4012, "ipc_split": 0.5179, "d_ipc": 0.1167, "d_l1i": 0.128, "d_l1d": 3.837, "d_l2c": -2.121}, {"trace": "sierra.a.6_0016", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.4556, "ipc_split": 0.5899, "d_ipc": 0.1343, "d_l1i": 0.095, "d_l1d": 3.833, "d_l2c": 3.527}, {"trace": "sierra.a.6_0017", "group": "sierra.a.6", "policy": "8i0d", "ipc_fdip": 0.3613, "ipc_split": 0.4762, "d_ipc": 0.1149, "d_l1i": 0.112, "d_l1d": 3.593, "d_l2c": -3.293}];
+init(__DATA__);
+
+  function init(data) {
+    const policies = ['shared', '0i8d', '2i6d', '4i4d', '6i2d', '8i0d'];
+    let activePolicies = new Set(policies);
+    let sortKey = 'd_ipc';
+    let sortDir = -1; // descending by |value| initially handled specially
+    let search = '';
+
+    // --- stats ---
+    const statsEl = document.getElementById('stats');
+    const n = data.length;
+    const avgAbsIpc = data.reduce((s, r) => s + Math.abs(r.d_ipc), 0) / n;
+    const worstIpc = data.reduce((a, b) => Math.abs(b.d_ipc) > Math.abs(a.d_ipc) ? b : a);
+    const within01 = data.filter(r => Math.abs(r.d_ipc) < 0.1).length;
+    statsEl.innerHTML = `
+      <div class="stat"><div class="label">조합 수</div><div class="value">${n.toLocaleString()}</div></div>
+      <div class="stat"><div class="label">평균 |d IPC|</div><div class="value">${avgAbsIpc.toFixed(4)}</div></div>
+      <div class="stat"><div class="label">|d IPC| &lt; 0.1</div><div class="value">${(100*within01/n).toFixed(1)}%</div></div>
+      <div class="stat"><div class="label">최대 |d IPC|</div><div class="value ${worstIpc.d_ipc>=0?'pos':'neg'}">${worstIpc.d_ipc.toFixed(3)}</div></div>
+    `;
+
+    // --- policy chips ---
+    const chipsEl = document.getElementById('policyChips');
+    chipsEl.innerHTML = policies.map(p =>
+      `<button class="policy-chip" data-policy="${p}" aria-pressed="true">${p}</button>`
+    ).join('');
+    chipsEl.querySelectorAll('.policy-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.policy;
+        if (activePolicies.has(p)) { activePolicies.delete(p); btn.setAttribute('aria-pressed','false'); }
+        else { activePolicies.add(p); btn.setAttribute('aria-pressed','true'); }
+        render();
+      });
+    });
+
+    document.getElementById('search').addEventListener('input', (e) => {
+      search = e.target.value.trim().toLowerCase();
+      render();
+    });
+
+    document.querySelectorAll('th[data-key] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const th = btn.closest('th');
+        const key = th.dataset.key;
+        if (sortKey === key) sortDir *= -1;
+        else { sortKey = key; sortDir = -1; }
+        document.querySelectorAll('th[data-key]').forEach(t => { delete t.dataset.active; t.querySelector('.arrow').textContent = '▾'; });
+        th.dataset.active = '';
+        th.querySelector('.arrow').textContent = sortDir === -1 ? '▾' : '▴';
+        render();
+      });
+    });
+
+    function fmt(v) {
+      if (v === null || v === undefined) return '—';
+      return v.toFixed(v === 0 ? 0 : 3);
+    }
+    function deltaClass(v) {
+      if (v === null || v === undefined || Math.abs(v) < 0.005) return 'flat';
+      return v > 0 ? 'pos' : 'neg';
+    }
+
+    function render() {
+      let rows = data.filter(r => activePolicies.has(r.policy));
+      if (search) rows = rows.filter(r => r.trace.toLowerCase().includes(search) || r.group.toLowerCase().includes(search));
+
+      rows = rows.slice().sort((a, b) => {
+        const av = a[sortKey], bv = b[sortKey];
+        if (typeof av === 'string') return sortDir * av.localeCompare(bv);
+        return sortDir * ((av ?? -Infinity) - (bv ?? -Infinity));
+      });
+
+      document.getElementById('rowCount').textContent = `${rows.length.toLocaleString()} rows`;
+
+      const frag = document.createDocumentFragment();
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      const limited = rows.slice(0, 2000);
+      for (const r of limited) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="trace-cell">${r.trace}<span class="group">${r.group}</span></td>
+          <td class="policy-cell">${r.policy}</td>
+          <td class="num">${fmt(r.ipc_fdip)}</td>
+          <td class="num">${fmt(r.ipc_split)}</td>
+          <td class="delta ${deltaClass(r.d_ipc)}">${r.d_ipc > 0 ? '+' : ''}${fmt(r.d_ipc)}</td>
+          <td class="delta ${deltaClass(r.d_l1i)}">${r.d_l1i > 0 ? '+' : ''}${fmt(r.d_l1i)}</td>
+          <td class="delta ${deltaClass(r.d_l1d)}">${r.d_l1d > 0 ? '+' : ''}${fmt(r.d_l1d)}</td>
+          <td class="delta ${deltaClass(r.d_l2c)}">${r.d_l2c === null ? '—' : (r.d_l2c > 0 ? '+' : '') + fmt(r.d_l2c)}</td>
+        `;
+        frag.appendChild(tr);
+      }
+      tbody.appendChild(frag);
+    }
+
+    render();
+  }
+</script>

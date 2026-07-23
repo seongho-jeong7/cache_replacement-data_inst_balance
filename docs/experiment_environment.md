@@ -7,6 +7,8 @@
 - `ChampSim/`: 일반 ChampSim 원본 저장소를 git submodule로 연결한 위치
 - `ChampSim_DPC4/`: DPC4 기반 ChampSim 위치
 - `ChampSim_FDIP/`: FDIP 구현을 확인하고 비교하기 위한 별도 연구용 ChampSim 위치
+- `ChampSim_Split/`: FDIP 구현과 독립적으로 L2I/L2D split 효과를 확인하기 위해 최신 ChampSim 계열에 split 구조를 적용한 위치
+- `ChampSim_DPC4_Split/`: Berti/Pythia 등 DPC4 계열 prefetcher와 split 구조를 함께 실험하기 위해 DPC4 기반 ChampSim에 split 구조를 적용한 위치
 - `*/champsim_config.json`: 각 ChampSim 디렉터리 안에서 직접 관리하는 설정 파일. 루트 `config/` 폴더는 더 이상 사용하지 않는다.
 - `traces/`: DPC4 또는 gtrace 계열 trace를 배치하는 위치. `scripts/run.sh`가 실행할 trace 목록을 적어두는 `trace_*.txt` 파일도 이 폴더 바로 아래에 둔다(`-T`가 참조하는 위치)
 - `scripts/`: 환경 준비와 실험 실행 스크립트 위치
@@ -14,6 +16,8 @@
 - `parser/`: ChampSim 출력 로그를 CSV와 summary로 변환하는 파서 위치
 - `docs/daily/`: 일별 연구 노트 작성 공간
 - `docs/`: 연구 관련 문서 작성 공간
+
+Split 계열 submodule은 단계적으로 늘어났다. 처음에는 FDIP 코드 위에서 L2C partition을 실험했지만, FDIP 구현 버그가 결과에 섞일 수 있어 최신 ChampSim 기반 `ChampSim_Split`으로 L2 분리 효과를 따로 확인했다. 이후 Berti/Pythia prefetcher가 DPC4 계열에 있어 `ChampSim_DPC4_Split`을 추가했다.
 
 ## Documentation
 
@@ -43,6 +47,8 @@ scripts/setup_champsim.sh -C ChampSim
 scripts/setup_champsim.sh -C ChampSim_FDIP
 scripts/setup_champsim.sh -C ChampSim_FDIP_ideal
 scripts/setup_champsim.sh -C ChampSim_FDIP_dirty
+scripts/setup_champsim.sh -C ChampSim_Split
+scripts/setup_champsim.sh -C ChampSim_DPC4_Split
 ```
 
 동작은 다음과 같다.
@@ -81,8 +87,8 @@ scripts/run.sh -D
 - warmup instructions: `100000`
 - simulation instructions: `100000`
 - parallel jobs: `16`
-- default FTQ mask: `0xff` (현재 정의된 FTQ 전체)
-- default L2C policy mask: `0x1` (`shared`)
+- FTQ mask: `-f`를 지정한 경우에만 적용. 생략하면 ChampSim binary의 compiled-in/default 동작을 그대로 사용한다.
+- L2C policy mask: `-L2C`를 지정한 경우에만 적용. 생략하면 `champsim_config.json`을 수정하지 않고 그대로 실행한다.
 
 주요 옵션은 다음과 같다.
 
@@ -109,11 +115,11 @@ scripts/run.sh -C ChampSim_FDIP -b -t
 - `-h`: help를 출력한다.
 - `-D`: 현재 default path와 output 구조를 출력한다.
 - `-C <dir>`: 사용할 ChampSim directory를 지정한다. 상대경로는 repository root 기준으로 해석하고, 절대경로도 사용할 수 있다. 기본값은 `ChampSim_FDIP`이다.
-- `-b`: `${CHAMPSIM_DIR}/config.sh ${CHAMPSIM_DIR}/champsim_config.json`와 `make`를 수행한다. 현재 스크립트 구조상 build 단계에서는 `shared`, `0i8d`, `1i7d`, `2i6d`, `4i4d`, `6i2d`, `8i0d` policy별 binary를 준비한다.
+- `-b`: `${CHAMPSIM_DIR}/config.sh ${CHAMPSIM_DIR}/champsim_config.json`와 `make`를 수행한다. `-L2C`를 주면 선택한 L2C policy별 binary(`champsim_l2cshared`, `champsim_l2c2i6d` 등)를 만들고, `-L2C`를 생략하면 config를 그대로 사용한 기본 binary(`bin/champsim`)만 만든다.
 - `-t`: trace 실행을 수행한다.
 - `-p <num>`: trace 병렬 실행 개수를 지정한다. 기본값은 16이다. 전체 `(FTQ size, L2C policy, trace)` job 중 동시에 실행할 개수의 상한으로 동작한다.
-- `-f <mask>`: FDIP FTQ size set을 16진 bitmask로 지정한다. `0x` prefix가 필수다. 기존의 `-f 0`, `-f 16`, `-f a` 방식은 더 이상 사용하지 않는다.
-- `-L2C <mask>`: L2C instruction/data partition policy set을 bitmask로 지정한다.
+- `-f <mask>`: FDIP FTQ size set을 16진 bitmask로 지정한다. `0x` prefix가 필수다. 기존의 `-f 0`, `-f 16`, `-f a` 방식은 더 이상 사용하지 않는다. 생략하면 `--ftq_size`를 binary에 넘기지 않는다.
+- `-L2C <mask>`: L2C instruction/data policy set을 bitmask로 지정한다. 생략하면 config를 강제로 바꾸지 않고 현재 `champsim_config.json` 그대로 build/run한다.
 - `-w <num>`: warmup instructions 수를 지정한다. 기본값은 100000이다.
 - `-i <num>`: simulation instructions 수를 지정한다. 기본값은 100000이다.
 - `-r <id>`: run id를 지정한다. 기본값은 실행 시점의 타임스탬프(`YYMMDD_HHMM`)다. 이미 존재하는 run id를 다시 지정하면 `run.log`를 덮어쓰지 않고 이어서 기록한다. `-s`와 같이 쓰면 `-s`도 최신 run 대신 이 run id를 대상으로 한다.
@@ -149,7 +155,7 @@ L2C policy mask는 다음과 같다.
 0x7f all
 ```
 
-`0i8d`는 instruction-origin access가 L2C search/fill을 bypass하고 LLC로 바로 가는 control policy다. `8i0d`는 data-origin access에 같은 bypass를 적용한다. `1i7d`, `2i6d`, `4i4d`, `6i2d`는 L2C 8-way를 instruction/data way 범위로 정적으로 나누며, 현재 모델에서는 자기 partition way 수만큼 search latency를 지불한다.
+`0i8d`는 instruction-origin access가 L2C를 bypass하고 LLC로 바로 가는 control policy다. `8i0d`는 data-origin access에 같은 bypass를 적용한다. `1i7d`, `2i6d`, `4i4d`, `6i2d`는 L2C 8-way를 instruction/data way 범위로 정적으로 나누는 policy다. `shared`는 기존 L1I/L1D -> L2C -> LLC 구조를 유지한다.
 
 Summary mask는 다음과 같다.
 
@@ -173,7 +179,7 @@ Summary mask는 다음과 같다.
 
 `-b`를 주지 않으면 config 설정과 build는 생략한다. `-t`를 주지 않으면 trace 실행은 생략한다.
 
-`-t`는 `-T`로 지정한(또는 기본) trace 목록 파일에 적힌 trace만 실행하고 `raw/fdip_<num>/<l2c_policy>/<trace_root>/<trace_group>/` 아래에 로그를 남긴다. 여기서 `<trace_root>`와 `<trace_group>`은 목록 파일에 적힌 경로를 `/`로 나눠서 정한다 — 첫 세그먼트가 `<trace_root>`(예: `gtrace_v2`), 그 다음이 파일 바로 위 디렉터리인 `<trace_group>`(예: `yankee`, `sierra.a.4`)이다. `summary/`는 이 시점에는 만들어지지 않는다 — metrics 집계와 그래프 생성은 `-s`를 실행할 때만 이루어진다. trace 중 일부가 실패해도 나머지 trace는 계속 진행하고, 실패한 trace는 `run.log`에 `Failed trace: ...`로 기록된다.
+`-t`는 `-T`로 지정한(또는 기본) trace 목록 파일에 적힌 trace만 실행하고 `raw/fdip_<num>/<l2c_policy>/<trace_root>/<trace_group>/` 아래에 로그를 남긴다. `-f`를 생략하면 `fdip_0` 아래에 저장하고, `-L2C`를 생략하면 `default` policy 폴더를 사용한다. 여기서 `<trace_root>`와 `<trace_group>`은 목록 파일에 적힌 경로를 `/`로 나눠서 정한다 — 첫 세그먼트가 `<trace_root>`(예: `gtrace_v2`), 그 다음이 파일 바로 위 디렉터리인 `<trace_group>`(예: `yankee`, `sierra.a.4`)이다. `summary/`는 이 시점에는 만들어지지 않는다 — metrics 집계와 그래프 생성은 `-s`를 실행할 때만 이루어진다. trace 중 일부가 실패해도 나머지 trace는 계속 진행하고, 실패한 trace는 `run.log`에 `Failed trace: ...`로 기록된다.
 
 `-s`는 대상 run의 `raw/fdip_<num>/<l2c_policy>/`을 기준으로 `summary/fdip_<num>/<l2c_policy>/`을 생성하며, `mask`에 따라 다음을 선택적으로 수행한다.
 

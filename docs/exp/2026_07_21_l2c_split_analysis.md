@@ -1,10 +1,10 @@
 # 2026-07-21 Analysis: L2C Split g2 w10/i100 결과
 
-이 문서는 `260721_2005_w10_i100_l2c_split` 결과를 바탕으로, `ChampSim_L2C`의 실제 `L2I/L2D` 분리 구조가 어떤 경향을 보였는지 정리한다.
+이 문서는 `260721_2005_w10_i100_champ_split_2g` 결과를 바탕으로, `ChampSim_Split`의 실제 `L2I/L2D` 분리 구조가 어떤 경향을 보였는지 정리한다.
 
 ## 요약
 
-- `ChampSim_L2C`의 split hierarchy 자체는 정상 동작했다.
+- `ChampSim_Split`의 split hierarchy 자체는 정상 동작했다.
 - `shared`, `0i8d`, `2i6d`, `4i4d`, `6i2d`, `8i0d` 총 132개 job이 모두 완료됐다.
 - `delta`는 instruction way를 늘리는 방향(`2i6d -> 4i4d -> 6i2d`)에서 IPC가 조금씩 좋아졌지만, data L2를 완전히 없앤 `8i0d`에서는 IPC가 크게 하락했다.
 - `sierra.a.6`은 극단적인 `0i8d`, `8i0d`에서 IPC가 좋아지고, 중간 partition에서는 거의 중립 또는 소폭 하락했다.
@@ -66,7 +66,7 @@
 | `2i6d`, `4i4d`, `6i2d` | `cpu0_L2I`, `cpu0_L2D`가 모두 생성 |
 | `8i0d` | `cpu0_L2I`만 생성, data는 L2 bypass |
 
-따라서 `ChampSim_L2C`의 config-driven split hierarchy는 의도대로 적용됐다고 볼 수 있다.
+따라서 `ChampSim_Split`의 config-driven split hierarchy는 의도대로 적용됐다고 볼 수 있다.
 
 ## Parser 한계
 
