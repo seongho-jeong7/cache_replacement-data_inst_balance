@@ -17,3 +17,6 @@
 [submodule "ChampSim_Split"]
 	path = ChampSim_Split
 	url = https://github.com/seongho-jeong7/ChampSim_Split.git
+[submodule "ChampSim_DPC4_Split"]
+	path = ChampSim_DPC4_Split
+	url = https://github.com/seongho-jeong7/ChampSim_DPC4_Split.git
